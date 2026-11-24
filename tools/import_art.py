@@ -9,6 +9,7 @@ Kullanım:  python3 tools/import_art.py
    onun yerine mevcut görünüm (baş harf, emoji, SVG) kullanılır.
 """
 import json, os, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 A = os.path.join(ROOT, 'assets')
@@ -26,6 +27,12 @@ def run():
         os.makedirs(out_dir, exist_ok=True)
         if not os.path.isdir(src_dir):
             continue
+        # Mac'te "assets:incoming:units:okcu" gibi tam yol adıyla kaydedilenleri düzelt (uzantısızsa .png ekle)
+        for f in os.listdir(src_dir):
+            if ':' in f:
+                base = f.rsplit(':', 1)[1].strip()
+                if not os.path.splitext(base)[1]: base += '.png'
+                os.replace(os.path.join(src_dir, f), os.path.join(src_dir, base))
         for f in sorted(os.listdir(src_dir)):
             name, ext = os.path.splitext(f)
             if ext.lower() not in SRC_EXT:
@@ -39,6 +46,11 @@ def run():
                                capture_output=True, text=True)
             if r.returncode:
                 print('HATA', f, r.stderr.strip()); continue
+            # Şeffaf olması gereken görsel şeffaf değilse (düz beyaz ya da resme çizilmiş dama deseni) temizle
+            if fmt == 'png':
+                from clean_bg import read_png, clean
+                if read_png(out)[2][3] == 255:
+                    print(f'  {f}: arka plan şeffaf değildi, temizlendi (%{100 * clean(out):.0f})')
             n += 1
             print(f'  {cat}/{f} -> {os.path.relpath(out, A)}')
     # Ses dosyaları: assets/incoming/sfx/<ad>.mp3|ogg|wav|m4a → assets/sfx/ (dönüştürmeden kopyalanır)

@@ -155,7 +155,8 @@ export const CommanderMixin = {
     const out = { id, n, before, after: c.items[id], unlocked: false, respectUp: r1 > r0 ? r1 : 0, xp: 0 };
     if (r0 === 0 && r1 >= 1 && !c.owned.includes(id)) { this.gainCommander(id); out.unlocked = true; }
     else if (r1 > r0) this.log(`🎖️ ${d.name} ${RESPECT_NAMES[r1]} oldu! Yetenek ağacının ${r1}. dalı açıldı.`, 'lvl', { cmd: id });
-    // 9'dan sonraki eşyalar komutan tecrübesine dönüşür (komutan açıksa)
+    // 9'dan sonraki eşyalar Şan Madalyası'na (ve komutan açıksa tecrübeye) dönüşür
+    if (extra > 0) out.medals = this.addMedals(this.medalsFor(id, extra));
     if (extra > 0 && c.owned.includes(id)) out.xp = this.gainXp(id, extra * 300 * d.tier).xp;
     this.emit('change');
     return out;

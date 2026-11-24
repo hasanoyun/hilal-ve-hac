@@ -17,6 +17,7 @@ import { FieldMixin } from './field.js';
 import { QuestMixin } from './quests.js';
 import { SeasonMixin } from './season.js';
 import { HospitalMixin } from './hospital.js';
+import { MetaMixin } from './meta.js';
 
 const BASE_TPS = 0.8; // hız 1 ve maliyet 1'de saniyede kaç altıgen (yoğun ızgarada coğrafi hız aynı kalsın)
 const TRAIN_QUEUE = 3; // her kışlada sırada bekleyebilecek eğitim
@@ -135,6 +136,11 @@ export class Game {
     this.ensureQuests();
     this.ensureSeason();
     this.ensureHospital();
+    // Geliştirici modu (?dev): hız düğmesi; ?event: hafta sonu etkinliğini her gün aç
+    const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+    this.devMode = q.has('dev');
+    this.devEvent = q.has('event');
+    this.ensureMeta();
   }
 
   on(ev, fn) { (this.ls[ev] ||= []).push(fn); }
@@ -210,7 +216,7 @@ export class Game {
     r.stone *= (1 + 0.12 * b.tasocagi) * (tr.stone || 1);
     r.iron *= (1 + 0.12 * b.demirhane) * (tr.iron || 1);
     r.gold *= (1 + 0.15 * b.pazar) * (tr.gold || 1);
-    const trade = 1 + 0.08 * this.allies().length; // müttefik ticareti
+    const trade = (1 + 0.08 * this.allies().length) * this.dynProd(); // müttefik ticareti × hanedan bonusu
     for (const k of RES) r[k] *= trade;
     r.food -= this.totalTroops() / 10; // asker iaşesi
     return r;
@@ -235,7 +241,7 @@ export class Game {
     const lvl = this.s.bld[id];
     if (lvl >= MAX_LEVEL) return 'Azami seviye';
     if (this.s.builds.some((b) => b.b === id)) return 'Zaten yükseltiliyor';
-    if (this.s.builds.length >= MAX_BUILDS) return `İki inşaat yuvası da dolu`;
+    if (this.s.builds.length >= this.buildSlots()) return `${this.buildSlots() === 2 ? 'İki' : 'Üç'} inşaat yuvası da dolu`;
     if (!lvl && this.s.bld.saray < unlockAt(id)) return `Saray Sv. ${unlockAt(id)} gerekli`;
     if (id !== 'saray' && lvl >= this.s.bld.saray) return 'Önce Saray\'ı yükselt';
     if (!this.canAfford(buildCost(id, lvl))) return 'Kaynak yetersiz';
@@ -559,6 +565,7 @@ export class Game {
       // Eşkıyalara karşı tecrübe ×1,5 (komutan seviyelendirmek için)
       const g = this.gainXp(a.cmd, Math.round(this.battleXp(unitTotal(d.units) * d.wall * d.bonus, unitTotal(before), r.win) * (d.bandit ? BANDIT_XP : 1)));
       let captured = false, note = '', banditLv = 0, banditLoot = null, banditChest = null;
+      const wasBandit = !!this.s.bandits[i], wasBoss = !!this.s.bandits[i]?.boss;
       if (r.win && this.s.bandits[i]) {
         banditLv = this.s.bandits[i].lv;
         const banditBand = this.s.bandits[i].band || 'cete';
@@ -589,7 +596,9 @@ export class Game {
       } else {
         this.s.gar[i] = { u: r.D, until: this.s.t + 120 };
       }
+      const meta = this.onAttack({ win: r.win, before, after: r.A, tile: i, city: captured && !!t.city, bandit: wasBandit, boss: wasBoss });
       const report = {
+        stars: meta.stars, streak: meta.streak, firstGems: meta.first, boss: wasBoss,
         id: this.s.nextId++, t: this.s.t, army: a.name, target: label, tile: i, win: r.win, captured, note,
         attBefore: before, attAfter: { ...r.A }, defBefore: d.units, defAfter: r.D,
         wall: d.wall, effWall: r.wall, defFid: o, cmd: this.cmdDef(a.cmd).name, loot, plunderFood, banditLv, banditLoot, banditChest,
@@ -748,6 +757,7 @@ export class Game {
     for (const j of cands) {
       const o = owner[j];
       if (o === this.pf) {
+        if (this.shieldLeft() > 0) continue; // Barış Bayrağı
         if (!this.atWar(fid, o) || a.hostileCD > 0 || Math.random() > 0.4) continue;
         if (this.s.raids.some((r) => r.state === 'out' && isRaid(r) && (r.fid === fid || r.target === j))) continue;
       }
@@ -783,11 +793,33 @@ export class Game {
   // ---------- Döngü ----------
   tick(realDt) {
     const s = this.s;
+    // Gerçek zaman: sekme arka plandaysa ya da uygulama kapalıysa geçen süre çevrimdışı hesapla eklenir
+    this.realSync();
     const dt = Math.min(realDt, 0.5) * s.speed;
     s.t += dt;
-    const r = this.rates();
-    // Depo sınırı: sınıra ulaşan kaynağın üretimi durur (ganimet ve ödüller sınırı aşabilir, üretim aşamaz)
-    const cap = this.storageCap();
+    this.econTick(dt);
+    this.buildTick(dt);
+    this.trainTick(dt);
+    this.armyTick(dt);
+    this.aiTick(dt);
+    this.raidTick(dt);
+    this.convoyTick(dt);
+    this.hospitalTick(dt);
+    this.banditTick(dt);
+    this.abandonTick();
+    this.dipTick(dt);
+    this.questT += realDt;
+    if (this.questT > 1) { this.questT = 0; this.questTick(); this.autoReinforce(); this.seasonTick(); this.metaTick(); }
+    if (!s.won && this.count[this.pf].cities >= VICTORY_CITIES) {
+      s.won = true;
+      this.log(`Zafer! ${VICTORY_CITIES} şehre hükmediyorsun.`, 'big');
+      this.emit('victory');
+    }
+  }
+
+  // Kaynak üretimi. Depo sınırı: sınıra ulaşan kaynağın üretimi durur (ganimet ve ödüller sınırı aşabilir, üretim aşamaz)
+  econTick(dt) {
+    const s = this.s, r = this.rates(), cap = this.storageCap();
     for (const k of RES) {
       const add = (r[k] * dt) / 60;
       if (add > 0) {
@@ -798,7 +830,10 @@ export class Game {
         this.log(`📦 Depo dolu: ${RES_NAMES[k]} üretimi durdu. Depo'yu yükselt ya da harca.`, 'full');
       } else if (s.res[k] < cap * 0.95) this.fullWarned[k] = false;
     }
+  }
 
+  buildTick(dt) {
+    const s = this.s;
     for (const b of [...s.builds]) {
       b.left -= dt;
       if (b.left > 0) continue;
@@ -810,11 +845,15 @@ export class Game {
         if (opened.length) this.log(`🔓 Saray Sv. ${b.to}: ${opened.map((id) => BUILDINGS[id].name).join(', ')} artık inşa edilebilir.`, 'big');
       }
       this.passAdd(8 * b.to, 'builds');
+      if (this.away) this.away.built.push(`${BUILDINGS[b.b].name} Sv. ${b.to}`);
       this.emit('built', b.b, b.to);
       this.emit('change');
     }
-    // Eğitim: her kışla kendi sırasındaki ilk işi yapar (kışlalar aynı anda çalışır)
-    const doneT = [];
+  }
+
+  // Eğitim: her kışla kendi sırasındaki ilk işi yapar (kışlalar aynı anda çalışır)
+  trainTick(dt) {
+    const s = this.s, doneT = [];
     for (const unit of UNIT_ORDER) {
       const q = s.tq.find((x) => x.unit === unit);
       if (!q) continue;
@@ -825,9 +864,14 @@ export class Game {
       s.tq = s.tq.filter((x) => x !== q);
       const a = s.armies[q.aid];
       if (a.state === 'home') a.units[q.unit] += q.n; else a.pending[q.unit] += q.n;
+      if (this.away) this.away.trained += q.n;
       this.log(`${q.n} ${this.unitName(q.unit)} ${a.name} için hazır.`, 'train');
       this.emit('change');
     }
+  }
+
+  armyTick(dt) {
+    const s = this.s;
     for (const a of s.armies) {
       // Konuşlandığı altıgeni bir yapay zekâ alırsa ordu başkente çekilir.
       if (a.state === 'guard' && s.owner[a.target] && s.owner[a.target] !== this.pf) this.recallArmy(a);
@@ -841,20 +885,6 @@ export class Game {
         else this.arrive(a);
       }
     }
-    this.aiTick(dt);
-    this.raidTick(dt);
-    this.convoyTick(dt);
-    this.hospitalTick(dt);
-    this.banditTick(dt);
-    this.abandonTick();
-    this.dipTick(dt);
-    this.questT += realDt;
-    if (this.questT > 1) { this.questT = 0; this.questTick(); this.autoReinforce(); this.seasonTick(); }
-    if (!s.won && this.count[this.pf].cities >= VICTORY_CITIES) {
-      s.won = true;
-      this.log(`Zafer! ${VICTORY_CITIES} şehre hükmediyorsun.`, 'big');
-      this.emit('victory');
-    }
   }
 
   ranking() {
@@ -864,4 +894,4 @@ export class Game {
   }
 }
 
-Object.assign(Game.prototype, DiplomacyMixin, CommanderMixin, RaidMixin, FieldMixin, BanditMixin, QuestMixin, SeasonMixin, HospitalMixin);
+Object.assign(Game.prototype, DiplomacyMixin, CommanderMixin, RaidMixin, FieldMixin, BanditMixin, QuestMixin, SeasonMixin, HospitalMixin, MetaMixin);

@@ -144,6 +144,7 @@ export const RaidMixin = {
       this.s.stats.wins++;
       this.s.stats.defenses = (this.s.stats.defenses || 0) + 1;
       this.passAdd(25, 'defenses');
+      this.eventAdd('defense');
       if (this.s.dip.warScore[fid] !== undefined) this.s.dip.warScore[fid] += 1;
     } else {
       lost = true;

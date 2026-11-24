@@ -11,9 +11,12 @@ import { VICTORY_CITIES } from '../game/game.js';
 import { relationLabel, STATUS_INFO } from '../data/diplomacy.js';
 import { askConfirm } from './confirm.js';
 import { ico, eliteIco } from './icons.js';
-import { art, cmdKey, itemKey, unitKey, chestKey } from './art.js';
+import { art, artSrc, cmdKey, itemKey, unitKey, chestKey } from './art.js';
+// Sandık görsellerinde kapağın bittiği yükseklik (%): görsel buradan ikiye bölünür, kapak ayrı açılır
+const CHEST_SEAM = { tahta: 42, gumus: 44, altin: 44, efsanevi: 45 };
 import { Minimap } from './minimap.js';
 import { sfx, unlockAudio, isMuted, setMuted } from './sfx.js';
+import { HudMeta, META_ACTS } from './hudmeta.js';
 
 // Büyük sandık çizimi (kapak ayrı grup: açılırken döner)
 const chestSvg = (c) => `<svg viewBox="0 0 120 100" class="cf-svg"><defs><linearGradient id="cfw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a5a2e"/><stop offset="1" stop-color="#4a2c14"/></linearGradient></defs>
@@ -75,7 +78,8 @@ export class HUD {
     paintSb();
     sb.onclick = () => { setMuted(!isMuted()); paintSb(); sfx('click'); };
     $('#gem-btn').innerHTML = `${ico('gem')} <b id="gems">0</b>`;
-    $('#gem-btn').onclick = () => this.open('season');
+    $('#gem-btn').onclick = () => { sfx('click'); this.open('store'); };
+    $('#meta-chips').addEventListener('click', (e) => { const b = e.target.closest('[data-mopen]'); if (b) { sfx('click'); this.open(b.dataset.mopen); } });
     this.healSel = {};
     this.healArmy = 0;
     this.trainSel = {};
@@ -92,7 +96,7 @@ export class HUD {
       this.refreshTop();
     };
     // Alt menü simgeleri (emoji yerine oyuna özel SVG)
-    const NAV_ICO = { sehir: 'saray', commanders: 'helm', quests: 'scroll', season: 'medal', krallik: 'crown' };
+    const NAV_ICO = { sehir: 'saray', commanders: 'helm', quests: 'scroll', season: 'medal', krallik: 'crown', store: 'gem' };
     document.querySelectorAll('#bottombar [data-nav]').forEach((b) => { const sp = b.querySelector('span'); if (sp && NAV_ICO[b.dataset.nav]) sp.innerHTML = ico(NAV_ICO[b.dataset.nav]); });
     document.querySelectorAll('#bottombar [data-nav]').forEach((b) => {
       b.onclick = () => {
@@ -115,17 +119,23 @@ export class HUD {
     window.addEventListener('pointerup', release, true);
     window.addEventListener('pointercancel', release, true);
 
-    game.on('built', () => sfx('built'));
+    game.on('built', () => { if (!game.catching) sfx('built'); });
     game.on('owner', (i, old, f) => { if (f === game.pf && old !== f) sfx('flag', 0.5); });
     game.on('battle', (r) => {
+      if (game.catching) return;
       sfx('clash');
       sfx(r.win ? 'win' : 'lose', 0.45);
       const txt = r.defense
         ? (r.win ? `🛡️ ${r.target} savunuldu!` : `🩸 ${r.target} düştü`)
         : `${r.win ? '⚔️ ' : '🩸 '}${r.win ? (r.captured ? `${r.target} ele geçirildi!` : `${r.target}: zafer`) : `${r.target} önünde yenilgi`}`;
-      this.toast(`${txt} — rapor için dokun`, r.win ? 'win' : 'loss', () => this.open('report', r.id));
+      const extra = r.defense ? '' : `${r.stars ? ' ' + '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars) : ''}${r.streak >= 2 ? ` · 🔥${r.streak}` : ''}${r.firstGems ? ` · İlk fetih 💎${r.firstGems}` : ''}`;
+      this.toast(`${txt}${extra} — rapor için dokun`, r.win ? 'win' : 'loss', () => this.open('report', r.id));
+      if (r.firstGems) this.flashGain(['gem']);
+      if (r.boss && r.win) this.celebrate('Kuşatma patronu yenildi!', 'Büyük etkinlik puanı kazandın', '👹');
     });
     game.on('log', (e) => {
+      if (game.catching) return; // çevrimdışı hesap sırasında bildirim yağmuru olmasın ("Sen yokken" özetler)
+      if (e.kind === 'full') { if (Date.now() - (this.lastFull || 0) < 8000) return; this.lastFull = Date.now(); }
       if (e.kind === 'threat') sfx('threat');
       if (e.kind === 'threat') this.toast(`${e.text} Savunmak için dokun.`, 'loss', () => this.focusTile(e.tile), 7000);
       else if (e.kind === 'loss' && !e.report) this.toast(e.text, 'loss', () => e.tile != null && this.focusTile(e.tile));
@@ -153,6 +163,7 @@ export class HUD {
     if (game.migrated) setTimeout(() => this.toast('🗺️ Harita büyüdü: toprakların yeni haritaya taşındı, ordular başkente döndü.', 'big'), 600);
     this.timer = setInterval(() => this.refresh(), 250);
     this.minimap = new Minimap(game, scene, game.w);
+    this.initMeta();
     this.refresh();
   }
 
@@ -263,7 +274,10 @@ export class HUD {
     if (!b || b.disabled) return;
     const g = this.g, act = b.dataset.act;
     let err = null;
-    if (act === 'send') {
+    if (META_ACTS.has(act)) {
+      err = await this.metaAction(act, b);
+      if (err === false) { this.last.modal = ''; this.refresh(); return; }
+    } else if (act === 'send') {
       err = g.sendArmy(+b.dataset.a, this.sel);
       if (!err) this.toast(`${g.s.armies[+b.dataset.a].name} yola çıktı.`, 'march');
     } else if (act === 'guard') {
@@ -360,7 +374,7 @@ export class HUD {
     }
     if (err) { this.toast(err, 'warn'); sfx('error'); }
     else {
-      const snd = { send: 'horn', guard: 'horn', trainx: 'drums', train: 'drums', upgrade: 'build', claim: 'coins', heal: 'drums', healall: 'drums', reinforce: 'horn' }[act];
+      const snd = { gchest: 'coins', buyres: 'coins', builder: 'build', shield: 'flag', apfill: 'horn', medal: 'coins', send: 'horn', guard: 'horn', trainx: 'drums', train: 'drums', upgrade: 'build', claim: 'coins', heal: 'drums', healall: 'drums', reinforce: 'horn' }[act];
       sfx(snd || 'click');
     }
     this.last.tile = '';
@@ -399,9 +413,7 @@ export class HUD {
     qb.classList.toggle('hidden', !nq);
     qb.textContent = nq;
     $('#gems').textContent = fmt(g.s.gems);
-    const nch = g.s.pass.chests.length, sb = $('#season-badge');
-    sb.classList.toggle('hidden', !nch);
-    sb.textContent = nch;
+    this.refreshMetaTop();
     const nt = g.threats().length, tb = $('#threat-badge');
     // Başkent rozeti: tehdit yoksa hastanedeki yaralı varlığını gösterir
     const nw = unitTotal(g.s.hosp.u);
@@ -665,8 +677,10 @@ export class HUD {
     html += `<div class="storage">📦 <b>Depo sınırı: ${fmt(cap)}</b> (her kaynak için)${s.bld.depo < MAX_LEVEL ? ` · Sv. ${s.bld.depo + 1}: ${fmt(next)}` : ''}
       <div class="sfill">${RES.map((k) => { dyn['sf' + k] = `${Math.min(100, (100 * s.res[k]) / cap)}%`; return `<div class="sf ${s.res[k] >= cap ? 'full' : ''}"><span>${ico(k)}</span><div class="bar"><i data-k="sf${k}" data-bar></i></div></div>`; }).join('')}</div></div>`;
     // İnşaat yuvaları
-    html += `<div class="queue"><div class="qtitle">🔨 İnşaat yuvaları ${s.builds.length}/${MAX_BUILDS}</div>`;
-    for (let k = 0; k < MAX_BUILDS; k++) {
+    const slots = g.buildSlots();
+    if (g.builderLeft() > 0) dyn.bkl = fmtTime(g.builderLeft());
+    html += `<div class="queue"><div class="qtitle">🔨 İnşaat yuvaları ${s.builds.length}/${slots}${slots > MAX_BUILDS ? ' · 🔨 Usta Kalfa <span data-k="bkl"></span>' : ''}</div>`;
+    for (let k = 0; k < slots; k++) {
       const q = s.builds[k];
       if (!q) { html += `<div class="slot empty">Boş yuva — aşağıdan bir bina yükselt</div>`; continue; }
       dyn['bt' + k] = fmtTime(q.left / s.speed);
@@ -676,8 +690,9 @@ export class HUD {
       html += `<div class="slot"><div class="slothead"><span>${ico(q.b)} ${BUILDINGS[q.b].name} → Sv. ${q.to} <span data-k="bt${k}"></span></span>
         <button class="btn tiny gembtn" data-act="speedb" data-k="${k}" data-k2="bg${k}"><span data-k="bg${k}"></span></button></div><div class="bar"><i data-k="bb${k}" data-bar></i></div></div>`;
     }
+    if (slots === MAX_BUILDS) html += `<div class="slot empty lockslot">🔒 3. yuva — Usta Kalfa (48 saat) <button class="btn tiny gembtn" data-act="builder">💎 200</button></div>`;
     html += `</div>`;
-    const sig = [s.builds.map((q) => q.b + q.to).join(), RES.map((k) => s.res[k] >= cap).join()];
+    const sig = [s.builds.map((q) => q.b + q.to).join(), RES.map((k) => s.res[k] >= cap).join(), slots];
     html += `<div class="blist">`;
     // Kilitli binalar en altta, açılacakları Saray seviyesine göre sıralı
     const isLocked = (id) => !s.bld[id] && s.bld.saray < unlockAt(id);
@@ -785,8 +800,10 @@ export class HUD {
     const html = `<table class="rank"><thead><tr><th>#</th><th>Devlet</th><th>🗺️</th><th>🏰</th><th>Puan</th></tr></thead><tbody>${rows.map((r, k) => {
       const f = FACTIONS[r.fid];
       return `<tr class="${r.fid === g.pf ? 'me' : ''} ${r.alive ? '' : 'dead'}"><td>${k + 1}</td><td><i class="dot" style="background:${f.color}"></i>${esc(f.short)}${r.alive ? '' : ' ✝'}${r.fid !== g.pf && r.alive ? ` <small title="${STATUS_INFO[g.status(r.fid)].name}">${STATUS_INFO[g.status(r.fid)].icon}</small>` : ''}</td><td>${r.tiles}</td><td>${r.cities}</td><td>${fmt(r.score)}</td></tr>`;
-    }).join('')}</tbody></table><p class="hint">Zafer için ${VICTORY_CITIES} şehre hükmet. Bir devletin başkentini alırsan o devlet yıkılır.</p>`;
-    return { title: 'Sıralama', sig, html };
+    }).join('')}</tbody></table><p class="hint">Zafer için ${VICTORY_CITIES} şehre hükmet. Bir devletin başkentini alırsan o devlet yıkılır.</p>
+      <div class="dynrow"><span>⚔️ Gücün: <b>${fmt(g.power())}</b></span><span>🏛️ Hanedan Sv. <b>${g.s.meta.dyn}</b></span><span>🔥 En uzun seri: <b>${g.s.meta.bestStreak}</b></span></div>
+      ${g.s.won ? this.victoryHtml() : ''}`;
+    return { title: 'Sıralama', sig: sig + g.s.won + g.s.meta.dyn + Math.floor(g.power() / 500), html };
   }
 
   view_log() {
@@ -963,23 +980,34 @@ export class HUD {
     const go = () => (items.length ? this.revealItems(items, () => this.showChestsBody(list, items)) : this.showChestsBody(list, null));
     // En değerli sandık sallanır, kapağı açılır, ışık patlar; sonra içerik gelir
     const best = list.map((r) => r.chest.type).sort((a, b) => CHEST_ORDER.indexOf(b) - CHEST_ORDER.indexOf(a))[0];
-    this.chestIntro(best, list.length, list.some((r) => r.jackpot), go);
+    this.chestIntro(best, list.length, list.some((r) => r.jackpot), go, this.chestQuality(list), list.some((r) => r.pity));
   }
 
-  chestIntro(type, n, jackpot, done) {
+  // Sandık görseli varsa kapak ve gövde iki ayrı katman (aynı görsel, kapak çizgisinden kırpılmış);
+  // yoksa kapağı zaten ayrı çizilen SVG sandık
+  chestBox(type, C) {
+    const src = artSrc(chestKey(type));
+    if (!src) return chestSvg(C.color);
+    return `<div class="cf-split" style="--seam:${CHEST_SEAM[type] || 44}%"><img class="cf-base" src="${src}" alt=""><div class="cf-inner"></div><img class="cf-lidimg" src="${src}" alt=""></div>`;
+  }
+
+  // q: açılış kalitesi (1 sıradan, 2 değerli, 3 efsanevi) — sandık daha uzun sallanır, ışık rengi değişir
+  chestIntro(type, n, jackpot, done, q = 1, pity = false) {
     const C = CHESTS[type] || CHESTS.tahta;
     const el = document.createElement('div');
-    el.className = `chestfx ct-${type}`;
+    el.className = `chestfx ct-${type} q${q}`;
     el.style.setProperty('--cc', C.color);
-    el.innerHTML = `<div class="cf-rays"></div><div class="cf-box">${art(chestKey(type), chestSvg(C.color), 'a-chest')}</div><div class="cf-flash"></div>
-      <div class="cf-name">${esc(C.name)}${n > 1 ? ` <small>+${n - 1} sandık</small>` : ''}${jackpot ? '<div class="cf-jack">✨ İkramiye!</div>' : ''}</div><div class="cf-hint">Geçmek için dokun</div>`;
+    el.innerHTML = `<div class="cf-rays"></div><div class="cf-box">${this.chestBox(type, C)}</div><div class="cf-flash"></div>
+      <div class="cf-name">${esc(C.name)}${n > 1 ? ` <small>+${n - 1} sandık</small>` : ''}${jackpot ? '<div class="cf-jack">✨ İkramiye!</div>' : ''}</div>${q === 3 ? `<div class="cf-legend">${pity ? '🌟 Efsane garantisi!' : '✦ EFSANEVİ ✦'}</div>` : ''}<div class="cf-hint">Geçmek için dokun</div>`;
     let ended = false;
     const end = () => { if (ended) return; ended = true; el.remove(); done(); };
     el.addEventListener('click', (e) => { e.stopPropagation(); end(); });
     document.body.appendChild(el);
     sfx('chest');
-    setTimeout(() => { if (!ended) { el.classList.add('open'); sfx('chestOpen'); } }, 900);
-    setTimeout(end, 1700);
+    const tOpen = q === 3 ? 1700 : q === 2 ? 1150 : 900;
+    if (q >= 2) setTimeout(() => { if (!ended) el.classList.add('tease'); }, 500);
+    setTimeout(() => { if (!ended) { el.classList.add('open'); sfx('chestOpen'); if (q === 3) sfx('levelup', 0.25); } }, tOpen);
+    setTimeout(end, tOpen + (q === 3 ? 1400 : 800));
   }
 
   // Seviye atlama kutlaması: ekranı kilitlemeyen, kendiliğinden kaybolan altın şerit
@@ -1153,13 +1181,14 @@ export class HUD {
       <div class="plv"><span class="lvbig">${p.lv}</span><div><div class="muted">Zafer Seviyesi · sonraki seviye: ${p.lv < PASS_MAX ? `${CHESTS[chestForLevel(p.lv + 1)].icon} ${esc(CHESTS[chestForLevel(p.lv + 1)].name)}` : '—'}</div>
         <div class="bar"><i data-k="pbar" data-bar></i></div><small data-k="ppts"></small></div></div>
     </div>`;
+    html += this.seasonExtras(sig, dyn);
     // Seviye yolu
-    html += `<div class="track">`;
+    html += `${this.premiumTrack() ? '<div class="trlabel">Ücretsiz şerit</div>' : ''}<div class="track">`;
     for (let lv = 2; lv <= PASS_MAX; lv++) {
       const C = CHESTS[chestForLevel(lv)];
       html += `<div class="tstep ${lv <= p.lv ? 'got' : ''} ${lv === p.lv + 1 ? 'next' : ''}" style="--cc:${C.color}" title="Seviye ${lv}: ${esc(C.name)}"><span>${C.icon}</span><small>${lv}</small></div>`;
     }
-    html += `</div>`;
+    html += `</div>${this.premiumTrack() ? `<div class="trlabel">🚩 Altın Sancak şeridi</div>${this.premiumTrack()}` : ''}`;
     // Sandıklar
     html += `<h4 class="sec">Sandıkların (${p.chests.length})</h4>`;
     if (p.chests.length) {
@@ -1182,7 +1211,9 @@ export class HUD {
     html += `<h4 class="sec">💎 Elmas</h4><div class="gembox"><div class="gembal">💎 <b>${fmt(g.s.gems)}</b> elmasın var</div>
       <ul class="dlist"><li>🔨 <b>İnşaatı hemen bitir</b> — kalan her dakika için 1,2 elmas (Şehir → Binalar → İnşaat yuvaları)</li>
       <li>⚔️ <b>Eğitimi hemen bitir</b> — kalan her dakika için 1 elmas; sıradaki ya da tüm kuyruk (Şehir → Ordular → Eğitim kuyruğu)</li>
-      <li>🎁 Elmas sandıklardan olasılığa bağlı çıkar (aşağıdaki tabloya bak)</li></ul></div>`;
+      <li>🎁 Elmas sandıklardan olasılığa bağlı çıkar (aşağıdaki tabloya bak), günlük ödülden ve ilk şehir fetihlerinden gelir</li>
+      <li>🛒 Sandık, kaynak, Usta Kalfa, Barış Bayrağı ve hareket hakkı <b>Hazine</b>'den alınır</li></ul>
+      <div class="actions"><button class="btn primary" data-act="open" data-m="store">💎 Hazine'yi aç</button></div></div>`;
     // Olasılıklar
     html += `<details class="rsec"><summary>🎲 Sandık içerikleri ve olasılıklar</summary><table class="rtable odds"><thead><tr><th>Sandık</th><th>Kaynak</th><th>💎 Elmas</th><th>✨ İkramiye</th><th>🎖️ Komutan eşyası</th></tr></thead><tbody>
       ${CHEST_ORDER.map((t) => { const C = CHESTS[t]; return `<tr><td>${C.icon} <b>${esc(C.name)}</b></td><td>${C.res.kinds[0] === C.res.kinds[1] ? C.res.kinds[0] : `${C.res.kinds[0]}–${C.res.kinds[1]}`} çeşit, her biri ${fmt(C.res.amount[0])}–${fmt(C.res.amount[1])}</td><td>%${Math.round(C.gem.p * 100)} ihtimalle ${C.gem.amount[0]}–${C.gem.amount[1]}</td><td>${C.jackpot ? `%${Math.round(C.jackpot * 100)} ihtimalle her şey ×2` : '—'}</td><td>%${Math.round(C.items.p * 100)} ihtimalle ${C.items.count[0] === C.items.count[1] ? C.items.count[0] : `${C.items.count[0]}–${C.items.count[1]}`} eşya</td></tr>`; }).join('')}
@@ -1225,7 +1256,7 @@ export class HUD {
       <div class="rbig">${art(itemKey(id, g.pf), it.icon, 'a-item')}</div><div class="rinfo"><b>${esc(it.name)}</b><small>${esc(it.desc)}</small>
       <div class="rsteps">${[1, 2, 3].map((k) => `<div class="rstep ${resp >= k ? 'on' : ''}"><span>${RESPECT_NAMES[k]}</span><small>${k * ITEMS_PER_RESPECT} eşya · ${k}. dal${k === 1 ? ' · komutan açılır' : ''}</small></div>`).join('')}</div>
       <div class="bar"><i style="width:${(100 * ni) / (ITEMS_PER_RESPECT * MAX_RESPECT)}%"></i></div>
-      <small>Elindeki: <b>${ni}</b> / ${ITEMS_PER_RESPECT * MAX_RESPECT} · Eşyalar sandıklardan rastgele çıkar (Kademe ${T.roman} eşyası ${d.tier === 3 ? 'çok nadir' : d.tier === 2 ? 'nadir' : 'yaygın'}). 9'dan sonraki her eşya ${fmt(300 * d.tier)} tecrübeye dönüşür.</small></div></div>`;
+      <small>Elindeki: <b>${ni}</b> / ${ITEMS_PER_RESPECT * MAX_RESPECT} · Eşyalar sandıklardan rastgele çıkar (Kademe ${T.roman} eşyası ${d.tier === 3 ? 'çok nadir' : d.tier === 2 ? 'nadir' : 'yaygın'}). 9'dan sonraki her eşya ${d.tier === 3 ? 4 : d.tier} 🏅 Şan Madalyası ve ${fmt(300 * d.tier)} tecrübeye dönüşür.</small></div></div>`;
     if (owned) {
       const ap = g.apOf(id), nx = g.apNext(id);
       sig.push(ap);
@@ -1272,13 +1303,14 @@ export class HUD {
     const g = this.g, s = g.s;
     const sig = [s.cmd.owned.join(), s.armies.map((a) => a.cmd + a.state).join(), JSON.stringify(s.cmd.lv), JSON.stringify(s.cmd.items || {}), s.cmd.owned.map((id) => g.apOf(id)).join()];
     const S = SIDES[g.side()], O = SIDES[g.side() === 'hilal' ? 'hac' : 'hilal'];
-    let html = `<p class="muted">Cephen: <b>${S.icon} ${S.name}</b> · Aktif komutan: <b>${g.activeCommanders()}/${MAX_ACTIVE}</b> · Her ordunun sefere çıkması için bir komutan gerekir. Her komutanın kendine özel bir eşyası vardır: 3 eşya komutanı açar (Saygı I), 6 eşya Saygı II, 9 eşya Saygı III. Her saygı seviyesi yetenek ağacının bir dalını açar. Eşyalar sandıklardan ve görevlerden gelir. ${O.icon} ${O.name} cephesinin komutanlarını alamazsın.</p>`;
+    let html = `<div class="actions"><button class="btn" data-act="open" data-m="collection">📖 Koleksiyon ${g.collection().owned.length}/${g.collection().all.length}${g.collReady().length ? ' · 🎁' : ''}</button></div><p class="muted">Cephen: <b>${S.icon} ${S.name}</b> · Aktif komutan: <b>${g.activeCommanders()}/${MAX_ACTIVE}</b> · Her ordunun sefere çıkması için bir komutan gerekir. Her komutanın kendine özel bir eşyası vardır: 3 eşya komutanı açar (Saygı I), 6 eşya Saygı II, 9 eşya Saygı III. Her saygı seviyesi yetenek ağacının bir dalını açar. Eşyalar sandıklardan ve görevlerden gelir. ${O.icon} ${O.name} cephesinin komutanlarını alamazsın.</p>`;
     html += `<h4 class="sec">Komutanların</h4>`;
     for (const id of s.cmd.owned) {
       const a = g.cmdArmy(id);
       const free = g.talentFree(id);
       sig.push(id + free);
       html += this.cmdCard(id, `<div class="cfoot">${a ? `<span class="chip">⚔️ ${a.name}${a.state !== 'home' ? ' · seferde' : ''}</span>` : '<span class="chip neutral">Boşta</span>'}
+        ${g.apOf(id) < AP_MAX ? `<button class="btn tiny gembtn" data-act="apfill" data-c="${id}" title="Hareket haklarını doldur">🏃 ${g.apOf(id)}/${AP_MAX} · 💎30</button>` : ''}
         <button class="btn tiny ${free > 0 ? 'primary' : ''}" data-act="profile" data-c="${id}">${free > 0 ? `⭐ ${free} puan · Profil` : 'Profil ve yetenekler'}</button></div>`);
     }
     const locked = g.sideCommanders().filter((id) => !s.cmd.owned.includes(id)).sort((a, b) => COMMANDERS[a].tier - COMMANDERS[b].tier);
@@ -1361,7 +1393,7 @@ export class HUD {
       ? (r.win ? '🛡️ Savunma başarılı' : '🩸 Bölge kaybedildi')
       : (r.win ? (r.captured ? '🏆 Zafer — bölge ele geçirildi' : '⚔️ Zafer') : '🩸 Yenilgi');
     const wallTxt = r.wall > 1 ? ` · Sur ×${r.wall.toFixed(1)} → ×${r.effWall.toFixed(2)}` : '';
-    const html = `<div class="verdict ${r.win ? 'win' : 'loss'}">${verdict}</div>
+    const html = `<div class="verdict ${r.win ? 'win' : 'loss'}">${verdict} ${this.starsHtml(r)}${r.streak >= 2 ? ` <span class="chip streak">🔥 ${r.streak} seri</span>` : ''}</div>${r.firstGems ? `<p class="pos">🏰 Bu şehri ilk kez fethettin: 💎${r.firstGems}</p>` : ''}
       <p class="muted">${r.defense ? `${esc(r.army)} saldırdı → ${esc(r.target)}` : `${esc(r.army)} → ${esc(r.target)}`}${wallTxt}</p>
       ${r.defense ? `<p class="muted">🛡️ Savunan: garnizon${r.guards?.length ? ' + ' + esc(r.guards.join(', ')) : ''}${r.cmd ? ` (🎖️ ${esc(r.cmd)})` : ''} · Düşman komutanı: ${esc(r.enemyCmd)}${r.enemyLv ? ` (Sv. ${r.enemyLv})` : ''}</p>` : ''}
       ${!r.defense && r.cmd ? `<p class="muted">🎖️ Komutan: ${esc(r.cmd)}${r.loot ? ` · Ganimet 🪙${fmt(r.loot)}` : ''}</p>` : ''}
@@ -1474,6 +1506,8 @@ export class HUD {
   }
 
   view_victory() {
-    return { title: 'Zafer!', sig: 'v', html: `<div class="verdict win">🏆 ${VICTORY_CITIES} şehre hükmediyorsun!</div><p>Bu prototipte zafer koşulunu sağladın. Oynamaya devam edebilir ya da yeni bir devletle baştan başlayabilirsin.</p>` };
+    return { title: 'Zafer!', sig: 'v' + this.g.s.meta.dyn, html: `<div class="verdict win">🏆 ${VICTORY_CITIES} şehre hükmediyorsun!</div>${this.victoryHtml()}` };
   }
 }
+
+Object.assign(HUD.prototype, HudMeta);

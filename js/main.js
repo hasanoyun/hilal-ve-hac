@@ -10,6 +10,7 @@ import { SIDES, FACTION_SIDE } from './data/commanders.js';
 import { askConfirm } from './ui/confirm.js';
 import { ico, eliteIco } from './ui/icons.js';
 import { loadArt } from './ui/art.js';
+import { rebirth } from './game/meta.js';
 
 await loadArt(); // assets/manifest.json (yoksa tüm görseller mevcut görünümde kalır)
 
@@ -92,6 +93,12 @@ function start(state) {
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
   window.addEventListener('hh-restart', () => { saving = false; clearSave(); location.reload(); }, { once: true });
+  // Yeni hanedan: yeni harita, kalıcı ilerleme taşınır
+  window.addEventListener('hh-dynasty', () => {
+    saving = false;
+    saveGame(rebirth(game.s, newState(world, game.s.faction)));
+    location.reload();
+  }, { once: true });
 }
 
 showStart();

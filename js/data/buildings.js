@@ -29,8 +29,9 @@ export function buildCost(id, lvl) {
   for (const [k, v] of Object.entries(BUILDINGS[id].base)) out[k] = Math.round(v * m);
   return out;
 }
-// Her yükseltme bir öncekinden ~1,75 kat uzun sürer: 20 sn → … → Sv. 9→10 ≈ 51 dk
-export const buildTime = (lvl) => 20 * Math.pow(1.75, lvl);
+// Gerçek zamanlı süreler. İlk seviyeler hızlı (ilk yarım saat neredeyse beklemesiz), sonra uzar:
+// 20 sn, 35 sn, 1 dk, 1,8 dk, 3 dk → Sv. 5: 7 dk, 6: 17 dk, 7: 38 dk, 8: 1,5 sa, Sv. 9→10 ≈ 3,4 sa
+export const buildTime = (lvl) => (lvl <= 4 ? 20 * Math.pow(1.75, lvl) : 20 * Math.pow(1.75, 4) * Math.pow(2.3, lvl - 4));
 export const MAX_BUILDS = 2; // aynı anda yapılabilecek inşaat sayısı
 // Depo: her kaynak için saklama sınırı (Sv. 1: 8.000 · Sv. 5: ~52.000 · Sv. 10: ~550.000)
 export const storageCap = (lvl) => Math.round((5000 * Math.pow(1.6, lvl)) / 100) * 100;

@@ -15,7 +15,7 @@ export const SeasonMixin = {
     this.s.pass = {
       season: n, start: this.s.t, pts: 0, lv: 1, goalsDone: [],
       c: Object.fromEntries(COUNTERS.map((k) => [k, 0])),
-      chests: old?.chests || [], nextChest: old?.nextChest || 1,
+      chests: old?.chests || [], nextChest: old?.nextChest || 1, prem: false, premGot: 1,
     };
   },
   seasonLeft() { return Math.max(0, this.s.pass.start + SEASON_LEN - this.s.t); },
@@ -30,7 +30,7 @@ export const SeasonMixin = {
       this.checkGoals();
     }
     if (pts <= 0 || p.lv >= PASS_MAX) return;
-    p.pts += Math.round(pts);
+    p.pts += Math.round(pts * (this.sanMult ? this.sanMult() : 1));
     while (p.lv < PASS_MAX && p.pts >= passReq(p.lv)) {
       p.pts -= passReq(p.lv);
       p.lv++;
@@ -38,6 +38,7 @@ export const SeasonMixin = {
       this.addChest(type, `Zafer Seviyesi ${p.lv}`);
       this.log(`🏅 Zafer Seviyesi ${p.lv}! ${CHESTS[type].icon} ${CHESTS[type].name} kazandın.`, 'chest');
     }
+    if (p.prem) this.premiumCatchUp();
     if (p.lv >= PASS_MAX) p.pts = 0;
     this.emit('change');
   },
@@ -79,24 +80,29 @@ export const SeasonMixin = {
     }
     // Komutan saygı eşyaları: önce çıkma zarı, sonra her eşya için kademe ağırlıklı komutan seçimi
     const items = [];
-    const itemHit = Math.random() < C.items.p;
-    rolls.push({ text: `🎖️ Komutan eşyası (%${Math.round(C.items.p * 100)} ihtimal, ${C.items.count[0]}–${C.items.count[1]} adet)`, hit: itemHit });
+    // Efsane garantisi: sayaç dolduysa eşya kesin çıkar ve ilki Efsanevi (III) komutanın eşyasıdır
+    const pity = this.pityForce ? this.pityForce(ch.type) : false;
+    const itemHit = pity || Math.random() < C.items.p;
+    rolls.push({ text: `🎖️ Komutan eşyası (%${Math.round(C.items.p * 100)} ihtimal, ${C.items.count[0]}–${C.items.count[1]} adet)${pity ? ' — 🌟 Efsane garantisi!' : ''}`, hit: itemHit });
+    let legend = false;
     if (itemHit) {
       const cnt = rint(C.items.count[0], C.items.count[1]) * (jackpot ? 2 : 1);
       for (let k = 0; k < cnt; k++) {
         // Efsanevi Hazine: ilk eşya her zaman Efsanevi (III. kademe) bir komutanın eşyasıdır
-        const id = this.rollItemCommander(ch.type === 'efsanevi' && k === 0 ? 3 : 0);
+        const id = this.rollItemCommander((ch.type === 'efsanevi' || pity) && k === 0 ? 3 : 0);
+        if (this.cmdDef(id).tier === 3) legend = true;
         const got = items.find((x) => x.id === id);
         if (got) got.n++; else items.push({ id, n: 1 });
       }
     }
+    this.pityAfter?.(ch.type, legend);
     for (const [k, v] of Object.entries(res)) this.s.res[k] += v;
     this.s.gems += gems;
     const itemResults = items.map((x) => this.addItems(x.id, x.n, 'sandık')).filter(Boolean);
     p.chests = p.chests.filter((c) => c !== ch);
     this.log(`${C.icon} ${C.name} açıldı${gems ? ` · 💎${gems}` : ''}${jackpot ? ' · ✨ İkramiye!' : ''}`, 'info');
     this.emit('change');
-    return { chest: ch, res, gems, jackpot, rolls, items: itemResults };
+    return { chest: ch, res, gems, jackpot, rolls, items: itemResults, legend, pity };
   },
   // Hangi komutanın eşyası: kendi cephe komutanları + kendi başlangıç komutanın, kademeye göre ağırlıklı
   itemPool() {

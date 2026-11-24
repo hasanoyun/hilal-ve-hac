@@ -23,6 +23,8 @@ export async function loadArt() {
 }
 
 export const hasArt = (key) => !!MAN[key];
+// Tek dosyalı görselin adresi (görsel sayfası kareleri için null)
+export const artSrc = (key) => (typeof MAN[key] === 'string' ? `${BASE}${MAN[key]}` : null);
 
 // key varsa görseli, yoksa fallback HTML'ini döndürür. cls: kapsayıcı sınıfı (boyutu CSS belirler)
 // key bir dizi olabilir: ilk bulunan kullanılır (ör. devlete özel birlik, yoksa genel birlik)

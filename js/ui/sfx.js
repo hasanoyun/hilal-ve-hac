@@ -221,6 +221,46 @@ function creak(t, len = 0.45, peak = 0.3) {
   o.start(t); o.stop(t + len + 0.1);
 }
 
+// Kilit dili / mandal: kısa keskin tık + çelik kısmi frekanslar + gövdeden gelen boğuk vuruş
+function latch(t, peak = 0.4, pitch = 1, body = 1) {
+  const n = ctx.createBufferSource(); n.buffer = noise();
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800 * pitch;
+  const ng = ctx.createGain(); env(ng, t, 0.0005, peak, 0.025);
+  n.connect(hp).connect(ng); out(ng, 0.12);
+  n.start(t, rnd(0, 1)); n.stop(t + 0.05);
+  for (const [f, lv, d] of [[2150, 0.32, 0.07], [3420, 0.22, 0.05], [5130, 0.14, 0.035], [6870, 0.08, 0.025]]) {
+    const o = ctx.createOscillator(); o.frequency.value = f * pitch * rnd(0.98, 1.02);
+    const g = ctx.createGain(); env(g, t, 0.0005, peak * lv, d);
+    o.connect(g); out(g, 0.15);
+    o.start(t); o.stop(t + d + 0.03);
+  }
+  if (body > 0) {
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(170 * pitch, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.07);
+    const g = ctx.createGain(); env(g, t, 0.001, peak * 0.9 * body, 0.1);
+    o.connect(g); out(g, 0.1);
+    o.start(t); o.stop(t + 0.15);
+  }
+}
+
+// Anahtarın kilide girişi: metal üstünde kayan sürtünme (titreşimli bant geçiren gürültü)
+function keyScrape(t, len = 0.2, peak = 0.12) {
+  const n = ctx.createBufferSource(); n.buffer = noise();
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 6;
+  bp.frequency.setValueAtTime(2800, t); bp.frequency.linearRampToValueAtTime(4200, t + len);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+  // Pimlerin üstünden geçerken titreşir
+  const steps = 6;
+  for (let k = 0; k < steps; k++) {
+    const tt = t + (len * k) / steps;
+    g.gain.linearRampToValueAtTime(peak, tt + 0.008);
+    g.gain.linearRampToValueAtTime(peak * 0.25, tt + len / steps);
+  }
+  g.gain.linearRampToValueAtTime(0.0001, t + len + 0.02);
+  n.connect(bp).connect(g); out(g, 0.15);
+  n.start(t, rnd(0, 1)); n.stop(t + len + 0.05);
+}
+
 // ---------- Sesler ----------
 const N = (m) => 440 * Math.pow(2, (m - 69) / 12); // MIDI → Hz
 const SOUNDS = {
@@ -275,13 +315,18 @@ const SOUNDS = {
     drum(t, 0.7, 90, 40); drum(t + 0.42, 0.7, 90, 40); drum(t + 0.84, 0.8, 85, 38);
     brass(t + 0.84, N(50), 0.9, 0.15, 0.55);
   },
-  // Sandık: tahta gıcırtı (sallanırken)
-  chest(t) { creak(t, 0.5, 0.28); hammer(t + 0.55, 0.25, 0.7); },
-  // Sandık açıldı: kapak + ışıltı + sikkeler
+  // Sandık (kilit): anahtar girer, pimler tıkır tıkır döner
+  chest(t) {
+    keyScrape(t, 0.2, 0.05);
+    latch(t + 0.3, 0.16, 1.25, 0.2);
+    latch(t + 0.42, 0.18, 1.18, 0.2);
+    latch(t + 0.54, 0.2, 1.1, 0.3);
+  },
+  // Sandık açıldı: kilit dili geri çekilir — ağır "klak", geri sekme, kısa menteşe
   chestOpen(t) {
-    swish(t, 0.12, 0.3, 400, 3500);
-    bell(t + 0.02, N(84), 0.07, 1.4);
-    for (let k = 0; k < 9; k++) coin(t + 0.05 + k * rnd(0.04, 0.07), 0.08);
+    latch(t, 0.85, 0.82, 1.3);
+    latch(t + 0.055, 0.32, 1.3, 0.3);
+    creak(t + 0.14, 0.26, 0.1);
   },
   // Seviye atlama: yükselen çan arpeji
   levelup(t) {
