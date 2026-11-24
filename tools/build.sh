@@ -14,5 +14,5 @@ sed -i '' "s/const VERSION = 'hh-v[^']*'/const VERSION = 'hh-$(date +%Y%m%d%H%M%
 find dist -name .DS_Store -delete
 # Tüm oyun dosyalarını ilk açılışta önbelleğe al (sonra internetsiz de açılır)
 LIST=$(cd dist && find . -type f ! -name sw.js ! -name .nojekyll ! -name CREDITS.md ! -name '*.svg' | sed 's|^\./||' | sort | awk '{printf "%s'"'"'%s'"'"'", (NR>1?", ":""), $0}')
-sed -i '' "s|^const SHELL = .*|const SHELL = ['./', $LIST];|" dist/sw.js
+sed -i '' "s|^const SHELL = .*|const SHELL = ['./', 'https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js', $LIST];|" dist/sw.js
 echo "dist/ hazır: $(find dist -type f | wc -l | tr -d ' ') dosya, $(du -sh dist | cut -f1)"
