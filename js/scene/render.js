@@ -4,6 +4,7 @@ import { TERRAIN, RES_INFO } from '../data/terrain.js';
 import { FACTIONS } from '../data/factions.js';
 import { RIVERS_PX, rand01 } from '../game/world.js';
 import * as G from '../data/geo.js';
+import { mapImg } from '../ui/art.js';
 
 function rgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -91,6 +92,20 @@ export function renderTerrainCanvas(world, scale = 2, rect = { x: 0, y: 0, w: wo
     }
     ctx.fillStyle = shade(col, t.terrain === 'su' ? 0.98 + rand01(t.col, t.row, 9) * 0.04 : v);
     ctx.beginPath(); hexPath(ctx, t.x, t.y, HEX_SIZE + 0.6); ctx.fill();
+    // Arazi dokusu (görsel varsa): altıgene kırpılır; tekrar göze batmasın diye rastgele çevrilir ve kaydırılır
+    const img = mapImg(`terrain/${t.terrain}`);
+    if (img) {
+      const s = HEX_SIZE * 2.3, fx = rand01(t.col, t.row, 31) < 0.5 ? -1 : 1;
+      const ox = (rand01(t.col, t.row, 32) - 0.5) * s * 0.25, oy = (rand01(t.col, t.row, 33) - 0.5) * s * 0.25;
+      ctx.save();
+      ctx.beginPath(); hexPath(ctx, t.x, t.y, HEX_SIZE + 0.6); ctx.clip();
+      ctx.globalAlpha = t.terrain === 'su' ? 0.55 : 1;
+      ctx.translate(t.x, t.y); ctx.scale(fx, 1);
+      ctx.drawImage(img, -s / 2 + ox, -s / 2 + oy, s, s);
+      ctx.restore();
+      // Hafif ton farkı: her altıgen biraz farklı aydınlıkta
+      if (t.terrain !== 'su') { ctx.fillStyle = v < 1 ? `rgba(0,0,0,${(1 - v) * 1.2})` : `rgba(255,250,230,${(v - 1) * 0.9})`; ctx.beginPath(); hexPath(ctx, t.x, t.y, HEX_SIZE + 0.6); ctx.fill(); }
+    }
   }
 
   // Izgara
@@ -121,7 +136,7 @@ export function renderTerrainCanvas(world, scale = 2, rect = { x: 0, y: 0, w: wo
 
   // Süslemeler
   for (const t of vis) {
-    if (t.city) continue;
+    if (t.city || (mapImg(`terrain/${t.terrain}`) && t.terrain !== 'dag')) continue; // görselli arazide çizim süslemesi yok (dağ zirveleri okunurluk için kalır)
     const r = (k) => rand01(t.col, t.row, 20 + k) - 0.5;
     const { x, y } = t;
     switch (t.terrain) {
@@ -200,7 +215,9 @@ export function renderTerrainCanvas(world, scale = 2, rect = { x: 0, y: 0, w: wo
   // Şehir simgeleri
   for (const t of vis) {
     if (!t.city) continue;
-    drawCastle(ctx, t.x, t.y - 1, t.capitalOf ? 13 : 10, !!t.capitalOf);
+    const ci = mapImg(t.capitalOf ? 'map/capital' : 'map/castle') || mapImg('map/castle');
+    if (ci) { const s = t.capitalOf ? 34 : 27; ctx.drawImage(ci, t.x - s / 2, t.y - s * 0.62, s, s); }
+    else drawCastle(ctx, t.x, t.y - 1, t.capitalOf ? 13 : 10, !!t.capitalOf);
   }
 
   // Kaynak yatakları: simge + seviye rozeti (seviye arttıkça çerçeve altınlaşır)
@@ -212,9 +229,10 @@ export function renderTerrainCanvas(world, scale = 2, rect = { x: 0, y: 0, w: wo
     ctx.strokeStyle = LVC[t.dep.lv - 1];
     ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(x - 3, y, 6.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.font = '7px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    const ri = mapImg(`ui/${t.dep.res}`);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(RES_INFO[t.dep.res].icon, x - 3, y + 0.5);
+    if (ri) ctx.drawImage(ri, x - 8.6, y - 5.6, 11.2, 11.2);
+    else { ctx.font = '7px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; ctx.fillText(RES_INFO[t.dep.res].icon, x - 3, y + 0.5); }
     ctx.fillStyle = LVC[t.dep.lv - 1];
     ctx.beginPath(); ctx.arc(x + 5, y + 3, 3.6, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#1d140b';

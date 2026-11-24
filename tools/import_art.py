@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 A = os.path.join(ROOT, 'assets')
 # klasör: (en uzun kenar px, çıktı biçimi)
-SPEC = {'commanders': (256, 'jpeg'), 'items': (192, 'png'), 'units': (160, 'png'), 'chests': (384, 'png')}
+SPEC = {'commanders': (256, 'jpeg'), 'items': (192, 'png'), 'units': (160, 'png'), 'chests': (384, 'png'),
+        'ui': (128, 'png'), 'terrain': (256, 'jpeg'), 'map': (256, 'png')}
 EXT = {'jpeg': '.jpg', 'png': '.png'}
 SRC_EXT = ('.png', '.jpg', '.jpeg', '.webp', '.heic')
 AUDIO_EXT = ('.mp3', '.ogg', '.wav', '.m4a')

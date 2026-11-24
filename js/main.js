@@ -9,10 +9,11 @@ import { UNITS } from './data/units.js';
 import { SIDES, FACTION_SIDE } from './data/commanders.js';
 import { askConfirm } from './ui/confirm.js';
 import { ico, eliteIco } from './ui/icons.js';
-import { loadArt } from './ui/art.js';
+import { loadArt, loadMapArt } from './ui/art.js';
 import { rebirth } from './game/meta.js';
 
 await loadArt(); // assets/manifest.json (yoksa tüm görseller mevcut görünümde kalır)
+await loadMapArt(); // harita dokuları ve simgeler (Canvas çizimi için)
 
 const world = buildWorld();
 

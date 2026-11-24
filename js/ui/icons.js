@@ -52,7 +52,12 @@ const P = {
   chest: `<path d="M4 14c0-6 5-9 12-9s12 3 12 9z" ${N} ${S}/><rect x="4" y="14" width="24" height="13" rx="1.5" ${N} ${S}/><path d="M4 18h24M10 5.6V27M22 5.6V27" ${L}/><rect x="13.5" y="15.5" width="5" height="6" rx="1" ${G}/>`,
 };
 
+import { artSrc } from './art.js';
+
+// Görseli varsa (assets/ui/<ad>) görsel, yoksa SVG simge
 export function ico(name, cls = '') {
+  const src = artSrc(`ui/${name}`);
+  if (src) return `<img class="ico ico-art ico-${name} ${cls}" src="${src}" alt="" draggable="false">`;
   const body = P[name];
   if (!body) return '';
   return `<svg class="ico ico-${name} ${cls}" viewBox="0 0 32 32" aria-hidden="true">${body}</svg>`;

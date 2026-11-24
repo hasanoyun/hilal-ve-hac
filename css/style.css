@@ -947,3 +947,9 @@ b, .muted, small, .res b, .tnum, .hval { font-variant-numeric: tabular-nums; }
 @keyframes cfinner { to { box-shadow: 0 0 46px 16px color-mix(in srgb, var(--cc) 70%, #ffd76a); } }
 .chestfx.tease .cf-split .cf-lidimg { animation: cflidrattle .16s ease-in-out infinite; }
 @keyframes cflidrattle { 50% { transform: translateY(-2%) rotateX(8deg); } }
+
+/* Görsel simgeler (assets/ui): SVG simgelerle aynı boyut */
+img.ico-art { object-fit: contain; filter: drop-shadow(0 1px 1.2px rgba(0,0,0,.55)); }
+.res img.ico-art { width: 1.45em; height: 1.45em; vertical-align: -0.38em; }
+#bottombar button span img.ico-art { width: 1.6em; height: 1.6em; }
+.bcard .bicon img.ico-art { width: 1.3em; height: 1.3em; }
