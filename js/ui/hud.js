@@ -6,7 +6,7 @@ const unitIcon = (t, fid) => art(unitKey(t, fid), t === 'ozel' ? eliteIco(FACTIO
 import { BUILDINGS, BUILDING_ORDER, buildCost, MAX_LEVEL, MAX_BUILDS, storageCap, unlockAt } from '../data/buildings.js';
 import { TERRAIN, RES, RES_INFO, DEPOSITS } from '../data/terrain.js';
 import { AP_MAX } from '../data/commanders.js';
-import { COMMANDERS, TIERS, MAX_ACTIVE, SIDES, CORE, CORE_ORDER, ROLES, CMD_MAX_LEVEL, coreStats, xpToNext, ITEMS_PER_RESPECT, MAX_RESPECT, RESPECT_NAMES } from '../data/commanders.js';
+import { COMMANDERS, TIERS, MAX_ACTIVE, SIDES, CORE, CORE2, CORE_ORDER, ROLES, CMD_MAX_LEVEL, coreStats, xpToNext, ITEMS_PER_RESPECT, MAX_RESPECT, RESPECT_NAMES } from '../data/commanders.js';
 import { VICTORY_CITIES } from '../game/game.js';
 import { relationLabel, STATUS_INFO } from '../data/diplomacy.js';
 import { askConfirm } from './confirm.js';
@@ -36,7 +36,7 @@ const TAB_GROUPS = {
   krallik: [['diplomacy', 'Diplomasi', 'scroll'], ['ranking', 'Sıralama', 'crown']],
 };
 const GROUP_OF = { city: 'sehir', armies: 'sehir', hospital: 'sehir', diplomacy: 'krallik', ranking: 'krallik' };
-import { BRANCHES, COMMANDER_BRANCHES, BIOS, MAX_RANK, SUB_REQ, talentNodes, talentPoints, respecCost, tierK } from '../data/talents.js';
+import { BRANCHES, COMMANDER_BRANCHES, COMMON_BRANCH, subReq, BIOS, MAX_RANK, talentNodes, talentPoints, respecCost, tierK } from '../data/talents.js';
 
 const $ = (s) => document.querySelector(s);
 const fmt = (n) => {
@@ -733,7 +733,7 @@ export class HUD {
 
   view_armies() {
     const g = this.g, s = g.s, dyn = {};
-    const sig = [g.armyCap(), s.tq.length, s.tq[0]?.aid, s.tq[0]?.unit];
+    const sig = [s.armies.map((x) => g.armyCap(x)).join(), s.tq.length, s.tq[0]?.aid, s.tq[0]?.unit];
     let html = '';
     const threats = g.threats();
     sig.push(threats.map((r) => r.id).join());
@@ -790,7 +790,7 @@ export class HUD {
         ${cmdRow}
         ${this.unitsHtml(a.units, g.pf, a.wounded)}
         ${this.reinforceHtml(a, sig, dyn)}
-        <div class="capbar"><div class="bar"><i style="width:${Math.min(100, (100 * load) / g.armyCap())}%"></i></div><small>${fmt(load)} / ${fmt(g.armyCap())} · ${unitIcon('ozel', g.pf)} ${fmt(g.eliteLoad(a))}/${fmt(g.eliteCap())}</small></div>
+        <div class="capbar"><div class="bar"><i style="width:${Math.min(100, (100 * load) / g.armyCap(a))}%"></i></div><small>${fmt(load)} / ${fmt(g.armyCap(a))}${a.cmd ? ` <span class="muted">(❤️ +${fmt(g.cmdCapBonus(a.cmd))} Liderlik)</span>` : ''} · ${unitIcon('ozel', g.pf)} ${fmt(g.eliteLoad(a))}/${fmt(g.eliteCap())}</small></div>
         ${this.trainPanel(a, sig)}
       </div>`;
     }
@@ -890,7 +890,15 @@ export class HUD {
       : lv >= CMD_MAX_LEVEL ? '<span class="pos">Azami seviye</span>'
       : `<div class="xpbar"><div class="bar"><i style="width:${(100 * xp) / need}%"></i></div><small>${fmt(xp)} / ${fmt(need)} TP</small></div>`;
     return `<div class="core"><div class="lvrow"><b>Sv. ${lv}</b><span class="muted">/ ${CMD_MAX_LEVEL} · ${ROLES[d.role || 'denge'].name}</span>${bar}</div>
-      <div class="cstats">${CORE_ORDER.map((k) => `<span title="${CORE[k].name}: +%${(c[k] * CORE[k].per * 100).toFixed(1)}">${CORE[k].icon} ${CORE[k].name} <b>${c[k]}</b><small>+%${(c[k] * CORE[k].per * 100).toFixed(1)}</small></span>`).join('')}</div></div>`;
+      <div class="cstats">${CORE_ORDER.map((k) => `<span title="${esc(this.core2Text(k, c[k]))}">${CORE[k].icon} ${CORE[k].name} <b>${c[k]}</b><small>${this.core2Text(k, c[k])}</small></span>`).join('')}</div></div>`;
+  }
+  // Temel özelliğin iki etkisi: ana çarpan + ikinci etki
+  core2Text(k, v) {
+    const p = (x) => `%${(x * 100).toFixed(1).replace('.', ',')}`;
+    const main = `+${p(v * CORE[k].per)} ${{ atk: 'saldırı', def: 'savunma', lead: 'can', spd: 'hız' }[k]}`;
+    const second = k === 'atk' ? `${p(v * CORE2.crit.per)} vurma` : k === 'def' ? `${p(v * CORE2.dodge.per)} kaçınma`
+      : k === 'lead' ? `+${v * CORE2.cap} asker` : `hak ${p(v * CORE2.ap)} hızlı`;
+    return `${main} · ${second}`;
   }
   // Saygınlık satırı: eşya, saygı seviyesi ve bir sonraki eşiğe ilerleme
   respectLine(id) {
@@ -1119,7 +1127,7 @@ export class HUD {
     const nSel = unitTotal(sel);
     const err = g.healCheck(sel, this.healArmy);
     // Tek dokunuş önizlemesi: ordulardaki toplam boş yer kadar
-    const freeAll = s.armies.reduce((x, a) => x + Math.max(0, g.armyCap() - g.armyLoad(a)), 0) - s.healq.reduce((x, q) => x + unitTotal(q.u), 0);
+    const freeAll = s.armies.reduce((x, a) => x + Math.max(0, g.armyCap(a) - g.armyLoad(a)), 0) - s.healq.reduce((x, q) => x + unitTotal(q.u), 0);
     const canAll = Math.max(0, Math.min(wounded, freeAll));
     const scale = wounded ? canAll / wounded : 0;
     const prev = {}; for (const t of UNIT_ORDER) prev[t] = Math.floor(h.u[t] * scale);
@@ -1138,7 +1146,7 @@ export class HUD {
           <input type="range" min="0" max="${h.u[t]}" step="1" value="${sel[t]}" data-hslider="${t}"><b class="hval" data-hv="${t}">${fmt(sel[t])}</b></div>`).join('')}
         <div class="actions"><button class="btn tiny" data-act="hall">Tümünü seç</button><button class="btn tiny" data-act="hclear">Temizle</button></div>
         <div class="htargets">${s.armies.map((a) => {
-          const free = g.armyCap() - g.armyLoad(a) - s.healq.filter((q) => q.aid === a.id).reduce((x, q) => x + unitTotal(q.u), 0);
+          const free = g.armyCap(a) - g.armyLoad(a) - s.healq.filter((q) => q.aid === a.id).reduce((x, q) => x + unitTotal(q.u), 0);
           return `<button class="htarget ${this.healArmy === a.id ? 'on' : ''}" data-act="harmy" data-a="${a.id}"><b>${a.name}</b><small>${a.state === 'home' ? 'Başkentte' : 'Sahada'} · boş ${fmt(Math.max(0, free))}</small></button>`;
         }).join('')}</div>
         <div class="hsum"><div data-hsum><b>${fmt(nSel)} asker</b> · ⏱ ${fmtTime(g.healTime(sel) / s.speed)}</div><div class="costs" data-hcost>${nSel ? this.costHtml(g.healCost(sel)) : '<span class="muted">Asker seç</span>'}</div>
@@ -1268,7 +1276,7 @@ export class HUD {
       dyn.apn = nx ? `· sonraki +1: ${fmtTime(nx / g.s.speed)}` : '· dolu';
       html += `<div class="apbox"><div class="aphead"><span>🏃 Hareket hakkı</span><b class="${ap < 1 ? 'neg' : ''}">${ap}/${AP_MAX}</b><small class="muted" data-k="apn"></small></div>
         <div class="bar"><i style="width:${(100 * ap) / AP_MAX}%"></i></div>
-        <small class="muted">Her saldırı ve eşkıya avı 1 hak harcar. Kendi bölgende nöbete gitmek ve başkente dönüş ücretsiz. 2 dakikada 1 hak yenilenir.</small></div>`;
+        <small class="muted">Her saldırı ve eşkıya avı 1 hak harcar. Kendi bölgende nöbete gitmek ve başkente dönüş ücretsiz. ${Math.round(g.apRegen(id))} saniyede 1 hak yenilenir (Sevk yükseldikçe hızlanır).</small></div>`;
     }
     html += this.coreHtml(id, d, lv, owned);
     html += `<h4 class="sec">Doğuştan yetenekler</h4><ul class="skills">${d.skills.map((k) => `<li><b>${esc(k.name)}</b> — ${esc(k.desc)}</li>`).join('')}</ul>`;
@@ -1276,20 +1284,20 @@ export class HUD {
     html += `<h4 class="sec">Yetenek ağacı</h4>
       <div class="tpoints"><span>${owned ? `⭐ Kullanılabilir puan: <b>${free}</b> · Harcanan ${total - free}/${total}` : '🔒 Komutanı açınca yetenek seçebilirsin'}</span>
       <span class="tierk" style="--tc:${T.color}">Kademe ${T.roman} · yetenek gücü ×${String(k).replace('.', ',')}${d.tier < 3 ? ' (Efsanevi komutanlarda ×1,3)' : ''}</span>
-      <span class="muted">Her seviyede ~0,7 puan (50. seviyede 34). 🎲 işaretli yetenekler ihtimal bazlıdır.</span></div><div class="tree">`;
-    (COMMANDER_BRANCHES[id] || COMMANDER_BRANCHES.starter).forEach((b, bi) => {
+      <span class="muted">Her seviyede ~0,9 puan (50. seviyede 44). 🎲 işaretli yetenekler ihtimal bazlıdır.</span></div><div class="tree">`;
+    [...(COMMANDER_BRANCHES[id] || COMMANDER_BRANCHES.starter), COMMON_BRANCH].forEach((b, bi) => {
       const B = BRANCHES[b];
-      const bLocked = bi >= resp;
-      html += `<div class="branch ${bLocked ? 'rlocked' : ''}"><div class="bhead">${B.icon} ${esc(B.name)}</div>${bLocked ? `<div class="rlock">🔒 ${RESPECT_NAMES[bi + 1]} gerekli (${(bi + 1) * ITEMS_PER_RESPECT} ${esc(it.name)})</div>` : ''}`;
+      const bLocked = !B.common && bi >= resp;
+      html += `<div class="branch ${bLocked ? 'rlocked' : ''} ${B.common ? 'common' : ''}"><div class="bhead">${B.icon} ${esc(B.name)}${B.common ? ' <small>· tüm komutanlarda, saygı gerekmez</small>' : ''}</div>${bLocked ? `<div class="rlock">🔒 ${RESPECT_NAMES[bi + 1]} gerekli (${(bi + 1) * ITEMS_PER_RESPECT} ${esc(it.name)})</div>` : ''}`;
       for (const t of talentNodes(id).filter((x) => x.branch === b)) {
         const r = tal[t.key] || 0, n = t.node;
         const e = owned ? g.talentCheck(id, t.key) : 'Komutan kilitli';
-        const lockNeed = t.slot !== 'main' && (tal[`${b}.main`] || 0) < SUB_REQ[t.slot];
+        const lockNeed = t.slot !== 'main' && (tal[`${b}.main`] || 0) < subReq(B, t.slot);
         html += `<div class="tnode ${t.slot === 'main' ? 'main' : 'sub'} ${r ? 'on' : ''} ${lockNeed ? 'locked' : ''}">
           <div class="tn-head"><b>${n.chance ? '🎲 ' : ''}${esc(n.name)}</b><span class="rank">${r}/${MAX_RANK}</span></div>
           <div class="tn-desc">${esc(n.desc(Math.max(1, r), k))}</div>
           ${r && r < MAX_RANK ? `<div class="tn-next">Sonraki: ${esc(n.desc(r + 1, k))}</div>` : ''}
-          ${lockNeed ? `<div class="tn-lock">🔒 ${esc(B.main.name)} Kd. ${SUB_REQ[t.slot]} gerekli</div>`
+          ${lockNeed ? `<div class="tn-lock">🔒 ${esc(B.main.name)} Kd. ${subReq(B, t.slot)} gerekli</div>`
             : owned && r < MAX_RANK ? `<button class="btn tiny ${e ? '' : 'primary'}" data-act="talent" data-c="${id}" data-k="${t.key}" ${e ? 'disabled' : ''} title="${esc(e || '')}">＋ Öğren</button>` : ''}
         </div>`;
       }
@@ -1468,6 +1476,13 @@ export class HUD {
         if (mA ? x.dodgeA : x.dodgeD) ev.push('<span class="pos">🛡️ Hasarı savuşturdun</span>');
         if (mA ? x.critD : x.critA) ev.push('<span class="neg">💥 Düşman kritik vurdu</span>');
         if (mA ? x.dodgeD : x.dodgeA) ev.push('<span class="neg">🛡️ Düşman savuşturdu</span>');
+        // Muharebe Sanatı olayları (benim / düşmanın)
+        const NEWEV = [['pierce', '🗡️ Savunmayı deldin', '🗡️ Düşman savunmanı deldi'], ['confuse', '🌀 Düşmanı delirttin: kendine saldırdı', '🌀 Ordun delirtildi: kendine saldırdı'],
+          ['heal', '💚 Can verdin: kayıpların bir kısmı ayağa kalktı', '💚 Düşman can verdi'], ['shake', '💫 Düşmanı sarstın: sonraki tur zayıf vuracak', '💫 Sarsıldın: sonraki tur zayıf vuracaksın']];
+        for (const [k, mine, theirs] of NEWEV) {
+          if (mA ? x[k + 'A'] : x[k + 'D']) ev.push(`<span class="pos">${mine}</span>`);
+          if (mA ? x[k + 'D'] : x[k + 'A']) ev.push(`<span class="neg">${theirs}</span>`);
+        }
         const enSil = mA ? x.stunD : x.stunA, mySil = mA ? x.stunA : x.stunD;
         if (enSil.length) ev.push(`<span class="pos">😵 Düşman ${enSil.map((t) => unitIcon(t, null)).join('')} saldıramadı</span>`);
         if (mySil.length) ev.push(`<span class="neg">😵 Senin ${mySil.map((t) => unitIcon(t, null)).join('')} saldıramadı</span>`);

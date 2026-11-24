@@ -13,7 +13,7 @@ function counterOf(t, s, e, d) {
   const a = COUNTER[t] || COUNTER[s.cls] || {};
   return a[d.cls || e] ?? a[e] ?? 1;
 }
-function damage(src, srcMod, dst, dstMod, atkBoost, hpMult, silenced, round = 1) {
+function damage(src, srcMod, dst, dstMod, atkBoost, hpMult, silenced, round = 1, pierce = 0) {
   const kills = {};
   const total = unitTotal(dst);
   if (total < 1) return kills;
@@ -27,7 +27,7 @@ function damage(src, srcMod, dst, dstMod, atkBoost, hpMult, silenced, round = 1)
       if (!m || m < 0.5) continue;
       const d = dstMod(e);
       const c = counterOf(t, s, e, d);
-      const def = d.def * (1 - (s.pierce || 0));
+      const def = d.def * (1 - Math.min(0.9, (s.pierce || 0) + pierce));
       const dmg = (n * (m / total) * s.atk * DMG * c * atkBoost * fs) / (1 + def / 30);
       kills[e] = (kills[e] || 0) + dmg / (d.hp * hpMult);
     }
@@ -45,6 +45,11 @@ function damage(src, srcMod, dst, dstMod, atkBoost, hpMult, silenced, round = 1)
  *   critA/critD: {p, m}               her turda p ihtimalle o tarafın verdiği hasar ×m
  *   dodgeA/dodgeD: {p, m}             her turda p ihtimalle o tarafın aldığı hasar ×m
  *   stunA/stunD: Set(tür)             o tarafın bu türleri ilk 2 tur saldıramaz
+ *   Tur tur zar atılan komutan yetenekleri (X = A ya da D, yeteneğin sahibi olan taraf):
+ *   pierceX: {p, m}   Delme: o tur karşı tarafın savunmasının m oranı yok sayılır
+ *   confuseX: {p, m}  Delirtme: karşı taraf o tur saldırısının m oranını kendi saflarına yöneltir
+ *   healX: {p, m}     Can verme: o tur verilen kayıpların m oranı ayağa kalkar
+ *   shakeX: {p, m}    Sarsma: karşı tarafın bir sonraki tur hasarı m oranında azalır
  *   breakD                             savunan, başlangıcın bu oranının altına düşünce kaçar (varsayılan 0,03)
  *   breakA                             saldıran, başlangıcın bu oranının altına düşünce geri çekilir
  *   expect                             true: zar atmadan beklenen değerle hesapla (tahmin ekranları için)
@@ -55,13 +60,20 @@ function damage(src, srcMod, dst, dstMod, atkBoost, hpMult, silenced, round = 1)
 export function fight(att, attMod, def, defMod, wall = 1, defBonus = 1, opts = {}) {
   const siegeMult = opts.siege || 1, first = opts.first || 1;
   const rng = opts.rng || Math.random, expect = !!opts.expect;
-  const counts = { critA: 0, critD: 0, dodgeA: 0, dodgeD: 0 };
+  const counts = { critA: 0, critD: 0, dodgeA: 0, dodgeD: 0, pierceA: 0, pierceD: 0, confuseA: 0, confuseD: 0, healA: 0, healD: 0, shakeA: 0, shakeD: 0 };
   // p ihtimalle m, değilse 1 (tahminde beklenen değer)
   const roll = (pm, key) => {
     if (!pm || !pm.p) return 1;
     if (expect) return 1 + pm.p * (pm.m - 1);
     if (rng() < pm.p) { counts[key]++; return pm.m; }
     return 1;
+  };
+  // Tetiklenirse m, değilse 0 döndüren zar (tahminde beklenen değer p×m)
+  const amt = (pm, key) => {
+    if (!pm || !pm.p) return 0;
+    if (expect) return pm.p * pm.m;
+    if (rng() < pm.p) { counts[key]++; return pm.m; }
+    return 0;
   };
   const A = { ...att }, D = { ...def };
   let effWall = wall;
@@ -75,24 +87,41 @@ export function fight(att, attMod, def, defMod, wall = 1, defBonus = 1, opts = {
   const defAtk = 1 + (effWall - 1) * 0.5;
   const log = opts.log ? [] : null;
   let rounds = 0, end = 'rounds';
+  let shakenA = 0, shakenD = 0; // önceki turda sarsılan tarafın bu tur hasar kaybı
   for (; rounds < ROUNDS; rounds++) {
     const stunned = rounds < STUN_ROUNDS;
     const c0 = { ...counts };
-    const boostA = (rounds === 0 ? first : 1) * roll(opts.critA, 'critA') * roll(opts.dodgeD, 'dodgeD');
-    const boostD = defAtk * roll(opts.critD, 'critD') * roll(opts.dodgeA, 'dodgeA');
-    const kD = damage(A, attMod, D, defMod, boostA, defHp, stunned ? opts.stunA : null, rounds);
-    const kA = damage(D, defMod, A, attMod, boostD, 1, stunned ? opts.stunD : null, rounds);
+    const boostA = (rounds === 0 ? first : 1) * roll(opts.critA, 'critA') * roll(opts.dodgeD, 'dodgeD') * (1 - shakenA);
+    const boostD = defAtk * roll(opts.critD, 'critD') * roll(opts.dodgeA, 'dodgeA') * (1 - shakenD);
+    const pA = amt(opts.pierceA, 'pierceA'), pD = amt(opts.pierceD, 'pierceD');
+    const cA = amt(opts.confuseA, 'confuseA'), cD = amt(opts.confuseD, 'confuseD'); // cA: A'nın delirttiği oran (D'nin saldırısı)
+    const kD = damage(A, attMod, D, defMod, boostA * (1 - cD), defHp, stunned ? opts.stunA : null, rounds, pA);
+    const kA = damage(D, defMod, A, attMod, boostD * (1 - cA), 1, stunned ? opts.stunD : null, rounds, pD);
+    // Delirtilen taraf saldırısının bir kısmını kendi saflarına yöneltir
+    const selfD = cA > 0 ? damage(D, defMod, D, defMod, boostD * cA, defHp, null, rounds) : {};
+    const selfA = cD > 0 ? damage(A, attMod, A, attMod, boostA * cD, 1, null, rounds) : {};
+    for (const t in selfD) kD[t] = (kD[t] || 0) + selfD[t];
+    for (const t in selfA) kA[t] = (kA[t] || 0) + selfA[t];
+    const hA = amt(opts.healA, 'healA'), hD = amt(opts.healD, 'healD');
     const lostA = {}, lostD = {};
     for (const t of UNIT_ORDER) {
       const nd = Math.max(0, (D[t] || 0) - (kD[t] || 0)), na = Math.max(0, (A[t] || 0) - (kA[t] || 0));
-      lostD[t] = (D[t] || 0) - nd; lostA[t] = (A[t] || 0) - na;
-      D[t] = nd; A[t] = na;
+      // Can verme: o turun kayıplarının bir kısmı ayağa kalkar
+      const rd = ((D[t] || 0) - nd) * hD, ra = ((A[t] || 0) - na) * hA;
+      lostD[t] = (D[t] || 0) - nd - rd; lostA[t] = (A[t] || 0) - na - ra;
+      D[t] = nd + rd; A[t] = na + ra;
     }
+    // Sarsma: karşı taraf bir sonraki tur daha az vurur
+    shakenD = amt(opts.shakeA, 'shakeA');
+    shakenA = amt(opts.shakeD, 'shakeD');
     if (log) {
       const rnd = (o) => Object.fromEntries(UNIT_ORDER.map((t) => [t, Math.round(o[t] || 0)]));
+      const f = (k) => counts[k] > c0[k];
       log.push({
         r: rounds + 1, first: rounds === 0 && first !== 1,
-        critA: counts.critA > c0.critA, critD: counts.critD > c0.critD, dodgeA: counts.dodgeA > c0.dodgeA, dodgeD: counts.dodgeD > c0.dodgeD,
+        critA: f('critA'), critD: f('critD'), dodgeA: f('dodgeA'), dodgeD: f('dodgeD'),
+        pierceA: f('pierceA'), pierceD: f('pierceD'), confuseA: f('confuseA'), confuseD: f('confuseD'),
+        healA: f('healA'), healD: f('healD'), shakeA: f('shakeA'), shakeD: f('shakeD'),
         stunA: stunned && opts.stunA ? [...opts.stunA] : [], stunD: stunned && opts.stunD ? [...opts.stunD] : [],
         lostA: rnd(lostA), lostD: rnd(lostD), A: Math.round(unitTotal(A)), D: Math.round(unitTotal(D)),
       });

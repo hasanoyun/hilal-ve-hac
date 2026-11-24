@@ -1,8 +1,8 @@
 // Komutan sistemi: sahiplik, ordulara atama, kiralama, görevler ve savaş etkileri.
 // Game sınıfına karışım (mixin) olarak eklenir.
 import { AP_MAX, AP_REGEN } from '../data/commanders.js';
-import { COMMANDERS, TIERS, FACTION_SIDE, CMD_MAX_LEVEL, starterCommander, coreMult, xpToNext, ITEMS_PER_RESPECT, MAX_RESPECT, respectOf, RESPECT_NAMES } from '../data/commanders.js';
-import { MAX_RANK, SUB_REQ, talentPoints, talentNodes, autoTalents, respecCost, tierK } from '../data/talents.js';
+import { COMMANDERS, TIERS, FACTION_SIDE, CMD_MAX_LEVEL, starterCommander, coreMult, coreStats, CORE2, xpToNext, ITEMS_PER_RESPECT, MAX_RESPECT, respectOf, RESPECT_NAMES } from '../data/commanders.js';
+import { MAX_RANK, BRANCHES, subReq, talentPoints, talentNodes, autoTalents, respecCost, tierK } from '../data/talents.js';
 
 export function initCommanders(s) {
   s.cmd = { owned: ['starter'], done: [], claimed: [], lv: {}, items: { starter: ITEMS_PER_RESPECT } };
@@ -77,6 +77,10 @@ export const CommanderMixin = {
     const lv = a.lv ?? this.cmdLevel(a.cmd);
     const m = coreMult(d, lv);
     e.atk.all = m.atk; e.def.all = m.def; e.hp.all = m.lead; e.march = m.spd;
+    // İkinci etkiler: Saldırı → vurma şansı, Savunma → kaçınma şansı
+    const cs = coreStats(d, lv);
+    e.procs.push({ type: 'crit', p: cs.atk * CORE2.crit.per, m: CORE2.crit.m, name: 'Vurma (Saldırı)' });
+    e.procs.push({ type: 'dodge', p: cs.def * CORE2.dodge.per, m: CORE2.dodge.m, name: 'Kaçınma (Savunma)' });
     for (const sk of d.skills) mergeEff(e, sk.eff, sk.name);
     // Yetenek ağacı: oyuncunun seçtikleri ya da yapay zekânın otomatik dağıttıkları
     const tal = a.fid ? autoTalents(a.cmd, lv) : this.cmdTalents(a.cmd);
@@ -98,7 +102,8 @@ export const CommanderMixin = {
     const d = this.cmdDef(a.cmd), lv = a.lv ?? this.cmdLevel(a.cmd), k = tierK(d);
     const m = coreMult(d, lv);
     const pc = (x) => `${x >= 1 ? '+' : '−'}%${String(Math.round(Math.abs(x - 1) * 1000) / 10).replace('.', ',')}`;
-    const items = [{ kind: 'core', name: 'Temel özellikler', text: `Saldırı ${pc(m.atk)}, Savunma ${pc(m.def)}, Can ${pc(m.lead)}` }];
+    const cs = coreStats(d, lv), pp = (x) => `%${(x * 100).toFixed(1).replace('.', ',')}`;
+    const items = [{ kind: 'core', name: 'Temel özellikler', text: `Saldırı ${pc(m.atk)}, Savunma ${pc(m.def)}, Can ${pc(m.lead)} · her turda ${pp(cs.atk * CORE2.crit.per)} vurma, ${pp(cs.def * CORE2.dodge.per)} kaçınma şansı` }];
     for (const sk of d.skills) items.push({ kind: 'skill', name: sk.name, text: sk.desc });
     const tal = a.fid ? autoTalents(a.cmd, lv) : this.cmdTalents(a.cmd);
     const open = a.fid ? MAX_RESPECT : this.cmdRespect(a.cmd);
@@ -116,16 +121,21 @@ export const CommanderMixin = {
     c.ap ||= {};
     const r = (c.ap[id] ||= { v: AP_MAX, last: this.s.t });
     if (r.v >= AP_MAX) { r.v = AP_MAX; r.last = this.s.t; return r; }
-    const gained = Math.floor((this.s.t - r.last) / AP_REGEN);
+    const regen = this.apRegen(id);
+    const gained = Math.floor((this.s.t - r.last) / regen);
     if (gained > 0) {
       r.v = Math.min(AP_MAX, r.v + gained);
-      r.last = r.v >= AP_MAX ? this.s.t : r.last + gained * AP_REGEN;
+      r.last = r.v >= AP_MAX ? this.s.t : r.last + gained * regen;
     }
     return r;
   },
+  // Sevk: hareket hakkı daha hızlı yenilenir
+  apRegen(id) { const d = this.cmdDef(id); return d ? AP_REGEN / (1 + coreStats(d, this.cmdLevel(id)).spd * CORE2.ap) : AP_REGEN; },
+  // Liderlik: komutanın orduya kattığı ek kapasite
+  cmdCapBonus(id) { const d = id && this.cmdDef(id); return d ? coreStats(d, this.cmdLevel(id)).lead * CORE2.cap : 0; },
   apOf(id) { return id ? this.apRec(id).v : 0; },
   // Bir sonraki hakka kalan süre (oyun sn); hak doluysa 0
-  apNext(id) { const r = this.apRec(id); return r.v >= AP_MAX ? 0 : Math.max(0, r.last + AP_REGEN - this.s.t); },
+  apNext(id) { const r = this.apRec(id); return r.v >= AP_MAX ? 0 : Math.max(0, r.last + this.apRegen(id) - this.s.t); },
   apCheck(a) {
     if (!a.cmd) return null;
     if (this.apOf(a.cmd) >= 1) return null;
@@ -176,7 +186,7 @@ export const CommanderMixin = {
     if (t.bi >= this.cmdRespect(id)) return `${RESPECT_NAMES[t.bi + 1]} gerekli — komutanın eşyasından topla`;
     if (this.talentFree(id) <= 0) return 'Yetenek puanı yok — komutan seviye atladıkça kazanılır';
     if (t.slot !== 'main') {
-      const need = SUB_REQ[t.slot];
+      const need = subReq(BRANCHES[t.branch], t.slot);
       if ((tal[`${t.branch}.main`] || 0) < need) return `Önce ana özellik Kd. ${need}`;
     }
     return null;
@@ -211,11 +221,15 @@ export const CommanderMixin = {
   // expect=true (tahmin ekranı): zar atılmaz, tur başı ihtimaller beklenen değerle hesaplanır.
   rollProcs(e, expect = false) {
     // tried: savaş başında zar atılan yetenekler (tuttu / tutmadı), round: her turda zar atılanlar
-    const out = { critA: null, dodgeA: null, stun: new Set(), panic: 0, breach: false, weaken: 1, rally: 0, plunder: 1, fired: [], round: [], tried: [] };
+    const out = { critA: null, dodgeA: null, pierceA: null, confuseA: null, healA: null, shakeA: null, stun: new Set(), panic: 0, breach: false, weaken: 1, rally: 0, plunder: 1, fired: [], round: [], tried: [] };
     let cp = 0, cm = 1, dp = 0, dm = 1;
+    // Tur tur zar atılan yeni yetenekler: ihtimaller toplanır, etki en güçlüsü
+    const R = { pierce: [0, 0], confuse: [0, 0], heal: [0, 0], shake: [0, 0] };
     for (const p of e.procs) {
+      if (!p.p) continue;
       if (p.type === 'crit') { cp += p.p; cm = Math.max(cm, p.m); out.round.push({ name: p.name, type: p.type, p: p.p, m: p.m }); continue; }
       if (p.type === 'dodge') { dp += p.p; dm = Math.min(dm, p.m); out.round.push({ name: p.name, type: p.type, p: p.p, m: p.m }); continue; }
+      if (R[p.type]) { R[p.type][0] += p.p; R[p.type][1] = Math.max(R[p.type][1], p.m); out.round.push({ name: p.name, type: p.type, p: p.p, m: p.m }); continue; }
       if (expect) {
         if (p.type === 'weaken') out.weaken *= 1 - p.p * (1 - p.m);
         continue;
@@ -233,7 +247,17 @@ export const CommanderMixin = {
     }
     if (cp > 0) out.critA = { p: Math.min(0.6, cp), m: cm };
     if (dp > 0) out.dodgeA = { p: Math.min(0.6, dp), m: dm };
+    for (const [k, [p, m]] of Object.entries(R)) if (p > 0) out[k + 'A'] = { p: Math.min(0.5, p), m };
     return out;
+  },
+  // fight() için iki tarafın tur yeteneklerini birleştirir (PA: saldıran, PD: savunan; PD yoksa yalnızca saldıran)
+  procOpts(PA, PD = null) {
+    const o = {};
+    for (const k of ['crit', 'dodge', 'pierce', 'confuse', 'heal', 'shake']) {
+      if (PA?.[k + 'A']) o[k + 'A'] = PA[k + 'A'];
+      if (PD?.[k + 'A']) o[k + 'D'] = PD[k + 'A'];
+    }
+    return o;
   },
   statMult(e, stat, unit) { return (e[stat].all || 1) * (e[stat][unit] || 1); },
 

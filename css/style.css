@@ -953,3 +953,7 @@ img.ico-art { object-fit: contain; filter: drop-shadow(0 1px 1.2px rgba(0,0,0,.5
 .res img.ico-art { width: 1.45em; height: 1.45em; vertical-align: -0.38em; }
 #bottombar button span img.ico-art { width: 1.6em; height: 1.6em; }
 .bcard .bicon img.ico-art { width: 1.3em; height: 1.3em; }
+
+/* Ortak yetenek dalı: Muharebe Sanatı */
+.branch.common { border-color: rgba(242,201,76,.55); background: linear-gradient(180deg, rgba(242,201,76,.08), rgba(255,255,255,.02)); }
+.branch.common .bhead small { font-weight: 400; color: var(--muted); font-size: 10.5px; }

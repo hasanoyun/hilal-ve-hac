@@ -231,7 +231,8 @@ export class Game {
     return 30 + lvl * 15 + (this.count[fid]?.cities || 0) * 6;
   }
   // Ordu kapasitesi: 300 + tüm kışlaların seviye toplamı × 40 (5 kışla Sv.10 → 2.300)
-  armyCap() { const b = this.s.bld; return 300 + 40 * ((b.kisla || 0) + (b.atis || 0) + (b.ahir || 0) + (b.atolye || 0) + (b.ocak || 0)); }
+  // Ordu kapasitesi: kışlalardan gelen taban + komutanın Liderliği (a verilirse)
+  armyCap(a = null) { const b = this.s.bld; return 300 + 40 * ((b.kisla || 0) + (b.atis || 0) + (b.ahir || 0) + (b.atolye || 0) + (b.ocak || 0)) + (a?.cmd ? this.cmdCapBonus(a.cmd) : 0); }
   canAfford(cost) { return Object.entries(cost).every(([k, v]) => this.s.res[k] >= v); }
   pay(cost) { for (const [k, v] of Object.entries(cost)) this.s.res[k] -= v; }
 
@@ -270,7 +271,7 @@ export class Game {
   trainMax(aid, unit) {
     const a = this.s.armies[aid];
     if (!this.s.bld[UNIT_BARRACKS[unit]]) return 0;
-    let m = this.armyCap() - this.armyLoad(a);
+    let m = this.armyCap(a) - this.armyLoad(a);
     if (unit === 'ozel') m = Math.min(m, this.eliteCap() - this.eliteLoad(a));
     for (const [k, v] of Object.entries(this.unitDef(unit).cost)) m = Math.min(m, Math.floor(this.s.res[k] / v));
     return Math.max(0, m);
@@ -295,7 +296,7 @@ export class Game {
     const a = this.s.armies[aid];
     const bk = UNIT_BARRACKS[unit];
     if (!this.s.bld[bk]) return `Önce ${BUILDINGS[bk].name} inşa et`;
-    if (this.armyLoad(a) + n > this.armyCap()) return 'Ordu kapasitesi dolu (kışlaları yükselt)';
+    if (this.armyLoad(a) + n > this.armyCap(a)) return 'Ordu kapasitesi dolu (kışlaları yükselt ya da Liderliği yüksek bir komutan ata)';
     if (unit === 'ozel' && this.eliteLoad(a) + n > this.eliteCap()) return `Seçkin birlik sınırı dolu (ordu başına ${this.eliteCap()}; Seçkin Ocak'ı yükselt)`;
     if (n < 1) return 'Adet seç';
     if (this.s.tq.filter((q) => q.unit === unit).length >= TRAIN_QUEUE) return `${BUILDINGS[UNIT_BARRACKS[unit]].name} sırası dolu (en çok ${TRAIN_QUEUE})`;
@@ -658,7 +659,7 @@ export class Game {
     let wall = d.wall > 1 ? 1 + (d.wall - 1) * eff.wallMult : 1;
     if (P.breach) wall = 1;
     const r = fight(a.units, attMod, d.units, defMod, wall, d.bonus, {
-      siege: eff.siege, first: eff.first, critA: P.critA, dodgeA: P.dodgeA, stunD: P.stun, breakD: P.panic, expect: !real, log: real,
+      siege: eff.siege, first: eff.first, ...this.procOpts(P), stunD: P.stun, breakD: P.panic, expect: !real, log: real,
     });
     return { r, d, eff, P };
   }

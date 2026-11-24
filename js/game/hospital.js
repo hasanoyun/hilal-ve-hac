@@ -60,7 +60,7 @@ export const HospitalMixin = {
     const a = this.s.armies[aid];
     if (!a) return 'Ordu seç';
     const healing = this.s.healq.filter((q) => q.aid === aid).reduce((s, q) => s + unitTotal(q.u), 0);
-    if (this.armyLoad(a) + healing + n > this.armyCap()) return `${a.name} kapasitesi yetmiyor`;
+    if (this.armyLoad(a) + healing + n > this.armyCap(a)) return `${a.name} kapasitesi yetmiyor`;
     if ((units.ozel || 0) && this.eliteLoad(a) + (units.ozel || 0) > this.eliteCap()) return 'Seçkin birlik sınırı dolu';
     if (!this.canAfford(this.healCost(units))) return 'Kaynak yetersiz';
     return null;
@@ -92,7 +92,7 @@ export const HospitalMixin = {
   healAll() {
     const h = this.s.hosp.u;
     if (unitTotal(h) < 1) return { err: 'Hastanede yaralı yok' };
-    const armies = [...this.s.armies].map((a) => ({ a, free: this.armyCap() - this.armyLoad(a) - this.s.healq.filter((q) => q.aid === a.id).reduce((s, q) => s + unitTotal(q.u), 0), efree: this.eliteCap() - this.eliteLoad(a) }))
+    const armies = [...this.s.armies].map((a) => ({ a, free: this.armyCap(a) - this.armyLoad(a) - this.s.healq.filter((q) => q.aid === a.id).reduce((s, q) => s + unitTotal(q.u), 0), efree: this.eliteCap() - this.eliteLoad(a) }))
       .filter((x) => x.free > 0).sort((x, y) => y.free - x.free);
     let started = 0, total = 0;
     for (const x of armies) {

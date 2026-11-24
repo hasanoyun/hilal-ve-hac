@@ -104,7 +104,7 @@ export const RaidMixin = {
     if (PA.breach) wall = 1;
     const res = fight(r.units, attMod, D0, defMod, wall, d.bonus, {
       siege: effA.siege, first: effA.first, expect: !real,
-      critA: PA.critA, dodgeA: PA.dodgeA, critD: PD.critA, dodgeD: PD.dodgeA,
+      ...this.procOpts(PA, PD),
       stunD: PA.stun, stunA: PD.stun, breakD: PA.panic, breakA: PD.panic, log: real,
     });
     // res.win = saldıran (yapay zekâ) kazandı
@@ -195,7 +195,7 @@ export const RaidMixin = {
     let wall = d.wall > 1 ? 1 + (d.wall - 1) * effA.wallMult : 1;
     if (PA.breach) wall = 1;
     const res = fight(r.units, attMod, d.units, defMod, wall, d.bonus, {
-      siege: effA.siege, first: effA.first, critA: PA.critA, dodgeA: PA.dodgeA, stunD: PA.stun, breakD: PA.panic,
+      siege: effA.siege, first: effA.first, ...this.procOpts(PA), stunD: PA.stun, breakD: PA.panic,
     });
     r.units = { ...res.A };
     this.emit('clash', i, res.win);
