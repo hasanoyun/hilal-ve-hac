@@ -12,4 +12,7 @@ touch dist/.nojekyll
 # Her yayında önbellek sürümünü yenile (oyuncular güncel sürümü alsın)
 sed -i '' "s/const VERSION = 'hh-v[^']*'/const VERSION = 'hh-$(date +%Y%m%d%H%M%S)'/" dist/sw.js
 find dist -name .DS_Store -delete
+# Tüm oyun dosyalarını ilk açılışta önbelleğe al (sonra internetsiz de açılır)
+LIST=$(cd dist && find . -type f ! -name sw.js ! -name .nojekyll ! -name CREDITS.md ! -name '*.svg' | sed 's|^\./||' | sort | awk '{printf "%s'"'"'%s'"'"'", (NR>1?", ":""), $0}')
+sed -i '' "s|^const SHELL = .*|const SHELL = ['./', $LIST];|" dist/sw.js
 echo "dist/ hazır: $(find dist -type f | wc -l | tr -d ' ') dosya, $(du -sh dist | cut -f1)"
