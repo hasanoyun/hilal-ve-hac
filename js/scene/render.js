@@ -250,24 +250,19 @@ export function renderTerrainCanvas(world, scale = 2, rect = { x: 0, y: 0, w: wo
 }
 
 export function drawOwnership(ctx, world, owner, pf) {
+  // Altıgenlerin içi boyanmaz (arazi görünsün); yalnızca toprakların dış sınırı çizilir.
+  // Sınırın iç yanında ince, yarı saydam bir şerit toprağın hangi tarafta olduğunu belli eder.
   const tiles = world.tiles;
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   const byF = {};
   owner.forEach((o, i) => { if (o) (byF[o] ||= []).push(i); });
-  for (const [fid, list] of Object.entries(byF)) {
-    const col = FACTIONS[fid].color;
-    ctx.fillStyle = rgba(col, fid === pf ? 0.42 : 0.33);
-    ctx.beginPath();
-    for (const i of list) hexPath(ctx, tiles[i].x, tiles[i].y, HEX_SIZE + 0.5);
-    ctx.fill();
-  }
   ctx.lineCap = 'round';
-  for (const [fid, list] of Object.entries(byF)) {
-    const col = FACTIONS[fid].color;
+  ctx.lineJoin = 'round';
+  const edges = (list, fid, inset) => {
     ctx.beginPath();
     for (const i of list) {
       const t = tiles[i];
-      const cs = hexCorners(t.x, t.y, HEX_SIZE - 1.6);
+      const cs = hexCorners(t.x, t.y, HEX_SIZE - inset);
       t.nb.forEach((j, e) => {
         if (j < 0 || owner[j] !== fid) {
           ctx.moveTo(cs[e].x, cs[e].y);
@@ -275,13 +270,27 @@ export function drawOwnership(ctx, world, owner, pf) {
         }
       });
     }
-    if (fid === pf) {
-      ctx.strokeStyle = 'rgba(255,248,220,0.85)';
-      ctx.lineWidth = 5;
+  };
+  for (const [fid, list] of Object.entries(byF)) {
+    const col = FACTIONS[fid].color, me = fid === pf;
+    // İç şerit (toprağın içine doğru renk geçişi)
+    edges(list, fid, 4.2);
+    ctx.strokeStyle = rgba(col, me ? 0.45 : 0.35);
+    ctx.lineWidth = 4.5;
+    ctx.stroke();
+    // Asıl sınır
+    edges(list, fid, 1.4);
+    if (me) {
+      ctx.strokeStyle = 'rgba(255,248,220,0.9)';
+      ctx.lineWidth = 5.5;
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(20,12,4,0.45)';
+      ctx.lineWidth = 4;
       ctx.stroke();
     }
-    ctx.strokeStyle = shade(col, 0.85);
-    ctx.lineWidth = fid === pf ? 2.8 : 2.2;
+    ctx.strokeStyle = shade(col, me ? 0.95 : 0.9);
+    ctx.lineWidth = me ? 3 : 2.6;
     ctx.stroke();
   }
 }

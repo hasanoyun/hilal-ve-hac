@@ -374,6 +374,11 @@ export class HUD {
     }
     if (err) { this.toast(err, 'warn'); sfx('error'); }
     else {
+      // Ordu yola çıkınca bölge paneli (ve düğme bir pencereden geldiyse o pencere) kapanır, harita görünür
+      if (act === 'send' || act === 'guard') {
+        if (b.closest('#modal')) this.close();
+        this.scene.select(-1);
+      }
       const snd = { gchest: 'coins', buyres: 'coins', builder: 'build', shield: 'flag', apfill: 'horn', medal: 'coins', send: 'horn', guard: 'horn', trainx: 'drums', train: 'drums', upgrade: 'build', claim: 'coins', heal: 'drums', healall: 'drums', reinforce: 'horn' }[act];
       sfx(snd || 'click');
     }
