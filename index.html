@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#1c140d" />
+  <title>Hilal ve Haç — 1190</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Hilal ve Haç" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <header id="topbar">
+      <div id="faction-badge"></div>
+      <div id="resources"></div>
+      <div id="top-right">
+        <span id="meta-chips"></span>
+        <span id="territory" title="Toprak / sınır"></span>
+        <button id="gem-btn" class="chip gem" title="Hazine — elmas, sandık ve teklifler">💎 <b id="gems">0</b></button>
+        <button id="log-btn" class="chip" title="Günlük">📜</button>
+        <button id="sound-btn" class="chip" title="Sesi aç/kapat">🔊</button>
+        <button id="speed-btn" class="chip" title="Oyun hızı">1×</button>
+      </div>
+    </header>
+
+    <div id="toasts"></div>
+
+    <section id="tile-panel" class="sheet hidden"></section>
+
+    <nav id="bottombar">
+      <button data-nav="sehir"><span>🏰</span>Başkent<i id="threat-badge" class="badge hidden"></i></button>
+      <button data-nav="commanders"><span>🎖️</span>Komutan<i id="cmd-badge" class="badge hidden"></i></button>
+      <button data-nav="quests"><span>🎯</span>Görevler<i id="quest-badge" class="badge hidden"></i></button>
+      <button data-nav="season"><span>🏅</span>Zafer Yolu<i id="season-badge" class="badge hidden"></i></button>
+      <button data-nav="krallik"><span>👑</span>Krallık<i id="dip-badge" class="badge hidden"></i></button>
+      <button data-nav="store" class="navstore"><span>💎</span>Hazine</button>
+    </nav>
+
+    <div id="modal" class="hidden">
+      <div class="modal-box">
+        <div class="modal-head"><h2 id="modal-title"></h2><button class="close" data-close>✕</button></div>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="start-screen"></div>
+
+  <div id="rotate-hint"><div class="rh-ico">📱</div><b>Telefonu yatay çevir</b><small>Hilal ve Haç yatay ekranda oynanmak için tasarlandı.</small></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
