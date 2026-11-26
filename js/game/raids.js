@@ -10,8 +10,9 @@ import { fight } from './combat.js';
 
 const RAID_SLOW = 0.6;   // sefer orduları ağır yürür: oyuncuya tepki süresi kalır
 const ORIGIN_MAX = 12;    // seferin çıkabileceği en uzak mesafe (altıgen)
-const MIN_MARCH = 25;    // oyuncuya saldırıda en kısa sefer süresi (sn): ordunun toplanması dahil
-const MIN_EXPAND = 12;   // diğer seferlerde en kısa süre
+// Seferler sınırdan çıkar; ordu önce çıkış noktasında toplanır (bekler), sonra yürür. Toplam süre en az:
+const MIN_MARCH = 75;    // oyuncuya saldırıda (oyuncuya savunma için tepki süresi)
+const MIN_EXPAND = 120;  // diğer seferlerde (yapay zekânın büyüme hızını dengeler)
 
 export const isRaid = (r) => r.kind !== 'expand';
 
@@ -34,15 +35,18 @@ export const RaidMixin = {
   aiMaxMarches(ai) { return Math.min(3, 1 + Math.floor(ai.palace / 3)); },
   guardsAt(i) { return this.s.armies.filter((a) => a.state === 'guard' && a.target === i); },
 
+  // Seferin çıkış noktası: hedefe EN YAKIN kendi bölgesi (sınırdaki komşu altıgen; deniz aşırı seferde en yakın kıyı).
+  // Böylece ordu başka devletlerin topraklarının içinden geçmeden, sınırdan saldırır.
+  // (Oyuncuya tepki süresi MIN_MARCH ile korunur.) Eşit uzaklıkta şehir ve kale tercih edilir.
   raidOrigin(fid, target) {
     const tiles = this.w.tiles, owner = this.s.owner, T = tiles[target];
-    let best = -1, bs = -Infinity;
+    let best = -1, bs = Infinity;
     for (let j = 0; j < tiles.length; j++) {
       if (owner[j] !== fid) continue;
       const d = hexDistance(tiles[j].col, tiles[j].row, T.col, T.row);
       if (d > ORIGIN_MAX) continue;
-      const sc = d + (tiles[j].city ? 1.5 : 0) + (tiles[j].capitalOf ? 1 : 0) + Math.random();
-      if (sc > bs) { bs = sc; best = j; }
+      const sc = d - (tiles[j].city ? 0.3 : 0) - (tiles[j].capitalOf ? 0.2 : 0) + Math.random() * 0.1;
+      if (sc < bs) { bs = sc; best = j; }
     }
     return best;
   },
@@ -67,13 +71,19 @@ export const RaidMixin = {
     };
     r.cum = this.routeTimes(r, path, RAID_SLOW, fid);
     const tot = r.cum[r.cum.length - 1], min = kind === 'raid' ? MIN_MARCH : MIN_EXPAND;
-    if (tot < min) r.cum = r.cum.map((c) => (c * min) / tot);
+    if (tot < min) {
+      // Toplanma: çıkış altıgeni iki kez yazılır, ordu ilk aralıkta yerinde bekler
+      const prep = min - tot;
+      r.path = [path[0], ...path];
+      r.cum = [0, ...r.cum.map((c) => c + prep)];
+    }
     this.s.raids.push(r);
     ai.power -= strength * 0.6;
     if (kind !== 'raid') { this.emit('change'); return true; }
     ai.hostileCD = 50;
     const eta = r.cum[r.cum.length - 1];
-    this.log(`⚠️ ${FACTIONS[fid].short} ordusu (${COMMANDERS[r.cmd].name} Sv. ${r.lv}, ${unitTotal(units)} asker) ${this.tileLabel(target)} bölgene yürüyor! Varış ~${Math.ceil(eta)} sn.`, 'threat', { tile: target, raid: r.id });
+    const retake = this.aiWasLost(fid, target);
+    this.log(`⚠️ ${FACTIONS[fid].short} ordusu (${COMMANDERS[r.cmd].name} Sv. ${r.lv}, ${unitTotal(units)} asker) ${this.tileLabel(target)} bölgene yürüyor${retake ? ' — kaybettiği toprağı geri almak istiyor' : ''}! Varış ~${Math.ceil(eta)} sn.`, 'threat', { tile: target, raid: r.id });
     this.emit('change');
     return true;
   },

@@ -70,6 +70,10 @@ def run():
             name, ext = os.path.splitext(f)
             if ext in ('.png', '.jpg'):
                 man[f'{cat}/{name}'] = f'{cat}/{f}'
+    # Yürüyen ordu şeritleri (tools/sprite_sheet.py üretir)
+    d = os.path.join(A, 'march')
+    for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        if f.endswith('.png'): man[f'march/{f[:-4]}'] = f'march/{f}'
     d = os.path.join(A, 'sfx')
     for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
         name, ext = os.path.splitext(f)

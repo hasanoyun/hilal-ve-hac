@@ -11,6 +11,7 @@ import { askConfirm } from './ui/confirm.js';
 import { ico, eliteIco } from './ui/icons.js';
 import { loadArt, loadMapArt } from './ui/art.js';
 import { rebirth } from './game/meta.js';
+import { DIFFS, DIFF_ORDER } from './data/difficulty.js';
 
 await loadArt(); // assets/manifest.json (yoksa tüm görseller mevcut görünümde kalır)
 await loadMapArt(); // harita dokuları ve simgeler (Canvas çizimi için)
@@ -40,12 +41,15 @@ window.__world = world; // hata ayıklama için
 function showStart() {
   const el = document.getElementById('start-screen');
   const saved = loadGame();
+  let diff = 'normal';
+  try { diff = DIFFS[localStorage.getItem('hh-diff')] ? localStorage.getItem('hh-diff') : 'normal'; } catch { /* depolama yok */ }
   el.innerHTML = `
     <div class="start-inner">
       <h1>Hilal ve Haç</h1>
       <p class="tag">Yıl 1190 · Akdeniz'den Hazar'a, devletler toprak için yarışıyor</p>
       ${saved ? `<button class="btn primary big" id="continue-btn">Devam et — ${FACTIONS[saved.faction].short}</button><p class="or">ya da yeni bir devlet seç</p>` : '<p class="or">Bir devlet seç</p>'}
       ${isIOS && !isStandalone ? '<p class="installhint">📲 Tam ekran için Safari\'de <b>Paylaş → Ana Ekrana Ekle</b>, sonra simgeden aç.</p>' : ''}
+      <div class="diffpick"><span>Zorluk</span>${DIFF_ORDER.map((k) => `<button data-d="${k}" class="${k === diff ? 'on' : ''}" title="${DIFFS[k].text}">${DIFFS[k].icon} ${DIFFS[k].name}</button>`).join('')}<small id="diff-text">${DIFFS[diff].text}</small></div>
       <div class="fgrid">
         ${Object.entries(FACTIONS).map(([id, f]) => `
           <button class="fcard" data-f="${id}" style="--fc:${f.color}">
@@ -57,12 +61,20 @@ function showStart() {
       </div>
     </div>`;
   el.classList.remove('hidden');
+  el.querySelectorAll('.diffpick [data-d]').forEach((b) => {
+    b.onclick = () => {
+      diff = b.dataset.d;
+      try { localStorage.setItem('hh-diff', diff); } catch { /* depolama yok */ }
+      el.querySelectorAll('.diffpick [data-d]').forEach((x) => x.classList.toggle('on', x === b));
+      document.getElementById('diff-text').textContent = DIFFS[diff].text;
+    };
+  });
   if (saved) document.getElementById('continue-btn').onclick = () => start(saved);
   el.querySelectorAll('.fcard').forEach((b) => {
     b.onclick = async () => {
       if (saved && !(await askConfirm(`Kayıtlı ${FACTIONS[saved.faction].short} oyunu silinecek ve ${FACTIONS[b.dataset.f].name} ile yeni oyun başlayacak. Emin misin?`, { ok: 'Yeni oyun başlat', danger: true }))) return;
       clearSave();
-      start(newState(world, b.dataset.f));
+      start(newState(world, b.dataset.f, diff));
     };
   });
 }
@@ -97,7 +109,7 @@ function start(state) {
   // Yeni hanedan: yeni harita, kalıcı ilerleme taşınır
   window.addEventListener('hh-dynasty', () => {
     saving = false;
-    saveGame(rebirth(game.s, newState(world, game.s.faction)));
+    saveGame(rebirth(game.s, newState(world, game.s.faction, game.s.diff)));
     location.reload();
   }, { once: true });
 }

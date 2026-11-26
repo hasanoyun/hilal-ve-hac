@@ -29,11 +29,9 @@ export const CORE = {
   lead: { name: 'Liderlik', icon: '❤️', per: 0.001 },  // puan başına +%0,1 can
   spd: { name: 'Sevk', icon: '🐎', per: 0.0008 },      // puan başına +%0,08 yürüyüş hızı
 };
-// Temel özelliklerin ikinci etkileri:
-//   Saldırı → vurma (kritik) şansı · Savunma → kaçınma şansı · Liderlik → ordu kapasitesi · Sevk → hareket hakkı yenilenme hızı
+// Temel özelliklerin ikinci etkileri: Liderlik → ordu kapasitesi · Sevk → hareket hakkı yenilenme hızı
+// (Vurma, kaçınma vb. savaş yetenekleri efsanevi komutanların imza yetenekleridir: data/talents.js → SIGNATURE)
 export const CORE2 = {
-  crit: { per: 0.0008, m: 1.5 },   // Saldırı puanı başına +%0,08 vurma şansı (vurunca hasar ×1,5)
-  dodge: { per: 0.0008, m: 0.6 },  // Savunma puanı başına +%0,08 kaçınma şansı (kaçınınca alınan hasar −%40)
   cap: 5,                          // Liderlik puanı başına +5 asker (10 puan = +50)
   ap: 0.008,                       // Sevk puanı başına hareket hakkı %0,8 daha hızlı yenilenir
 };

@@ -425,6 +425,8 @@ export function rebirth(old, fresh) {
   });
   // Rakipler de daha güçlü başlar
   for (const ai of Object.values(fresh.ai)) { ai.palace = 1 + Math.min(4, dyn); ai.power = Math.round(250 * (1 + 0.3 * dyn)); }
+  fresh.diff = old.diff || 'normal';
+  fresh.tut = { k: 99, done: true };
   fresh.won = false;
   return fresh;
 }

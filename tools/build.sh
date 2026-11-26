@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 rm -rf dist && mkdir -p dist/assets
 cp index.html manifest.webmanifest sw.js CREDITS.md dist/
 cp -R css js dist/
-for d in icons sfx commanders items units chests ui terrain map; do [ -d "assets/$d" ] && cp -R "assets/$d" dist/assets/; done
+for d in icons sfx commanders items units chests ui terrain map march; do [ -d "assets/$d" ] && cp -R "assets/$d" dist/assets/; done
 cp assets/manifest.json dist/assets/
 touch dist/.nojekyll
 # Her yayında önbellek sürümünü yenile (oyuncular güncel sürümü alsın)

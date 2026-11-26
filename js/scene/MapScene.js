@@ -9,6 +9,12 @@ import { isRaid } from '../game/raids.js';
 const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
 const mmss = (s) => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 import { renderTerrainCanvas, drawOwnership } from './render.js';
+import { mapImg } from '../ui/art.js';
+
+// Yürüyen ordu şeridi: 8 kare (0-3 atlı komutan, 4-7 asker), her biri MARCH_CELL piksel
+const MARCH_CELL = 128;
+// Komutan önde, üç asker arkada (sağa bakarken). y büyük olan önde çizilir.
+const FORMATION = [{ x: -17, y: -3, s: 0.19 }, { x: -9, y: 3, s: 0.19 }, { x: -22, y: 5, s: 0.19 }, { x: 4, y: 1, s: 0.27, cmd: true }];
 
 const MAX_ZOOM = 3;
 
@@ -54,15 +60,28 @@ export class MapScene extends Phaser.Scene {
       return { txt, t };
     });
 
+    this.initMarchArt();
+
     // Ordular
     this.pathG = this.add.graphics();
     const color = Phaser.Display.Color.HexStringToColor(FACTIONS[this.g.pf].color).color;
     this.armyObjs = this.g.s.armies.map((a, k) => {
       const c = this.add.container(0, 0);
+      const troop = this.makeTroop(this.g.pf, color, 0xfff6dc);
+      const roman = ['I', 'II', 'III'][k] || String(k + 1);
+      let parts;
+      if (troop) {
+        // Ordu numarası küçük bir rozet olarak sayının yanında
+        const cnt = this.add.text(0, -30, '', { fontFamily: 'Inter, sans-serif', fontSize: '10px', fontStyle: 'bold', color: '#fff', backgroundColor: 'rgba(30,20,10,0.8)', padding: { x: 3, y: 1 } }).setOrigin(0.5).setResolution(2);
+        c.add([troop.c, cnt]);
+        c.setVisible(false);
+        return { c, cnt, troop, roman };
+      }
       const disc = this.add.circle(0, 0, 10, color).setStrokeStyle(2.5, 0xfff6dc);
-      const num = this.add.text(0, 0, ['I', 'II', 'III'][k] || String(k + 1), { fontFamily: 'Cinzel, serif', fontSize: '10px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5).setResolution(2);
+      const num = this.add.text(0, 0, roman, { fontFamily: 'Cinzel, serif', fontSize: '10px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5).setResolution(2);
       const cnt = this.add.text(0, -20, '', { fontFamily: 'Inter, sans-serif', fontSize: '10px', fontStyle: 'bold', color: '#fff', backgroundColor: 'rgba(30,20,10,0.75)', padding: { x: 3, y: 1 } }).setOrigin(0.5).setResolution(2);
-      c.add([disc, num, cnt]);
+      parts = [disc, num, cnt];
+      c.add(parts);
       c.setVisible(false);
       return { c, cnt };
     });
@@ -283,10 +302,11 @@ export class MapScene extends Phaser.Scene {
       const pos = this.g.armyPos(a);
       // Yürürken hafif sallanma ve toz izi
       const moving = a.state === 'out' || a.state === 'back';
-      const bob = moving ? Math.abs(Math.sin(this.time.now / 140 + k)) * -2.2 * o.c.scaleX : 0;
+      const bob = moving && !o.troop ? Math.abs(Math.sin(this.time.now / 140 + k)) * -2.2 * o.c.scaleX : 0;
+      if (o.troop) this.stepTroop(o.troop, pos.x, moving);
       o.c.setVisible(true).setPosition(pos.x, pos.y + bob);
       if (moving && this.dustOk) this.dust(pos.x, pos.y + 6 * o.c.scaleX, 0xcdb68a);
-      o.cnt.setText(String(unitTotal(a.units)));
+      o.cnt.setText(o.troop ? `${o.roman} · ${unitTotal(a.units)}` : String(unitTotal(a.units)));
       if (a.state === 'guard') {
         const t = tiles[a.target];
         this.guardG.lineStyle(3, 0x8fd0ff, 0.95);
@@ -309,13 +329,14 @@ export class MapScene extends Phaser.Scene {
       let o = this.raidObjs.get(r.id);
       if (!o) { o = this.makeRaidObj(r); this.raidObjs.set(r.id, o); }
       const pos = this.g.pathPos(r);
-      const rb = Math.abs(Math.sin(this.time.now / 130 + r.id)) * -2.2 * o.c.scaleX;
+      const rb = o.troop ? 0 : Math.abs(Math.sin(this.time.now / 130 + r.id)) * -2.2 * o.c.scaleX;
+      if (o.troop) this.stepTroop(o.troop, pos.x, true);
       o.c.setPosition(pos.x, pos.y + rb);
       if (this.dustOk) this.dust(pos.x, pos.y + 6 * o.c.scaleX, r.state === 'out' ? 0xb89a6a : 0x8a7a5a);
       o.cnt.setText(String(unitTotal(r.units)));
       o.c.setAlpha(r.state === 'out' ? 1 : 0.55);
       const raid = isRaid(r);
-      if (o.isRaid !== raid) { o.isRaid = raid; o.ring.setStrokeStyle(2, raid ? 0xff3b2f : o.col); }
+      if (o.isRaid !== raid) { o.isRaid = raid; o.ring.setStrokeStyle(2, raid ? 0xff3b2f : o.col); if (o.troop) this.setTroopRaid(o.troop, raid); }
       if (r.state === 'out') {
         const target = tiles[r.target];
         if (raid) {
@@ -367,6 +388,52 @@ export class MapScene extends Phaser.Scene {
     for (const [i, o] of this.abandonObjs) if (!liveA.has(i)) { o.destroy(); this.abandonObjs.delete(i); }
   }
 
+  // ---------- Yürüyen ordu görselleri ----------
+  // Her devletin şeridi bir sprite sayfası olarak eklenir; komutan ve asker için ayrı yürüme döngüsü
+  initMarchArt() {
+    this.marchOk = {};
+    for (const fid of Object.keys(FACTIONS)) {
+      const img = mapImg(`march/${fid}`);
+      if (!img) continue;
+      const key = `march_${fid}`;
+      if (!this.textures.exists(key)) this.textures.addSpriteSheet(key, img, { frameWidth: MARCH_CELL, frameHeight: MARCH_CELL });
+      if (!this.anims.exists(`${key}_c`)) this.anims.create({ key: `${key}_c`, frames: this.anims.generateFrameNumbers(key, { start: 0, end: 3 }), frameRate: 6, repeat: -1 });
+      if (!this.anims.exists(`${key}_s`)) this.anims.create({ key: `${key}_s`, frames: this.anims.generateFrameNumbers(key, { start: 4, end: 7 }), frameRate: 7, repeat: -1 });
+      this.marchOk[fid] = true;
+    }
+  }
+  // Komutan + 3 asker; ayak altında devlet renginde halka. Görsel yoksa null (eski daire kullanılır).
+  makeTroop(fid, col, edge) {
+    if (!this.marchOk?.[fid]) return null;
+    const key = `march_${fid}`;
+    const c = this.add.container(0, 0);
+    const base = this.add.ellipse(-8, 2, 40, 12, col, 0.5).setStrokeStyle(1.5, edge, 0.9);
+    const body = this.add.container(0, 0);
+    const sprites = FORMATION.map((f, n) => {
+      const sp = this.add.sprite(f.x, f.y, key, f.cmd ? 0 : 4).setOrigin(0.5, 1).setScale(f.s);
+      sp.play({ key: f.cmd ? `${key}_c` : `${key}_s`, startFrame: (n * 2 + 1) % 4 });
+      return sp;
+    });
+    body.add(sprites);
+    c.add([base, body]);
+    return { c, body, base, sprites, edge, lastX: null, dir: 1, moving: true };
+  }
+  // Hareket yönüne göre dön; dururken yürüme döngüsü durur
+  stepTroop(t, x, moving) {
+    if (t.lastX != null && Math.abs(x - t.lastX) > 0.05) {
+      const d = x > t.lastX ? 1 : -1;
+      if (d !== t.dir) { t.dir = d; t.body.setScale(d, 1); }
+    }
+    t.lastX = x;
+    if (moving !== t.moving) {
+      t.moving = moving;
+      for (const sp of t.sprites) { if (moving) sp.anims.resume(); else sp.anims.pause(); }
+    }
+  }
+  setTroopRaid(t, raid) {
+    t.base.setStrokeStyle(raid ? 2.5 : 1.5, raid ? 0xff3b2f : t.edge, 0.95);
+  }
+
   makeConvoyObj() {
     const c = this.add.container(0, 0);
     const disc = this.add.circle(0, 0, 7, 0x2f8f4e).setStrokeStyle(2, 0xd9ffe2);
@@ -384,9 +451,12 @@ export class MapScene extends Phaser.Scene {
     const c = this.add.container(0, 0);
     const raid = isRaid(r);
     const ring = this.add.circle(0, 0, 13, 0x000000, 0).setStrokeStyle(2, raid ? 0xff3b2f : col);
-    const disc = this.add.circle(0, 0, 10, col).setStrokeStyle(2.5, Phaser.Display.Color.HexStringToColor(TIERS[tier].color).color);
-    const num = this.add.text(0, 0, '⚔', { fontFamily: 'Inter, sans-serif', fontSize: '11px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5).setResolution(2);
-    const cnt = this.add.text(0, -21, '', { fontFamily: 'Inter, sans-serif', fontSize: '10px', fontStyle: 'bold', color: '#fff', backgroundColor: 'rgba(120,20,10,0.85)', padding: { x: 3, y: 1 } }).setOrigin(0.5).setResolution(2);
+    const tierCol = Phaser.Display.Color.HexStringToColor(TIERS[tier].color).color;
+    const troop = this.makeTroop(r.fid, col, tierCol);
+    if (troop) ring.setVisible(false);
+    const disc = troop ? troop.c : this.add.circle(0, 0, 10, col).setStrokeStyle(2.5, tierCol);
+    const num = this.add.text(0, 0, troop ? '' : '⚔', { fontFamily: 'Inter, sans-serif', fontSize: '11px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5).setResolution(2);
+    const cnt = this.add.text(0, troop ? -30 : -21, '', { fontFamily: 'Inter, sans-serif', fontSize: '10px', fontStyle: 'bold', color: '#fff', backgroundColor: 'rgba(120,20,10,0.85)', padding: { x: 3, y: 1 } }).setOrigin(0.5).setResolution(2);
     const C = COMMANDERS[r.cmd];
     const short = C ? C.name.split(' ').slice(-1)[0] : '';
     const name = this.add.text(0, 17, `${short} · Sv.${r.lv || 1}`, { fontFamily: 'Inter, sans-serif', fontSize: '9px', fontStyle: 'bold', color: '#fff', backgroundColor: hexA(FACTIONS[r.fid].color, 0.85), padding: { x: 3, y: 1 } }).setOrigin(0.5, 0).setResolution(2);
@@ -394,7 +464,8 @@ export class MapScene extends Phaser.Scene {
     c.add([ring, disc, num, cnt, name]);
     c.setScale(Phaser.Math.Clamp(1.1 / this.cameras.main.zoom, 0.7, 1.8));
     c.setDepth(5);
-    return { c, cnt, ring, col, name, isRaid: raid };
+    if (troop) this.setTroopRaid(troop, raid);
+    return { c, cnt, ring, col, name, isRaid: raid, troop };
   }
 
   // Eşkıya kampları: tehlike rengine göre kurukafa ve seviye; yakınlaşınca dağılmaya kalan süre

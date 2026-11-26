@@ -957,3 +957,30 @@ img.ico-art { object-fit: contain; filter: drop-shadow(0 1px 1.2px rgba(0,0,0,.5
 /* Ortak yetenek dalı: Muharebe Sanatı */
 .branch.common { border-color: rgba(242,201,76,.55); background: linear-gradient(180deg, rgba(242,201,76,.08), rgba(255,255,255,.02)); }
 .branch.common .bhead small { font-weight: 400; color: var(--muted); font-size: 10.5px; }
+.skills li.sig { color: #f6e2a8; }
+
+/* ---------- Zorluk seçimi ---------- */
+.diffpick { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin: 4px auto 12px; }
+.diffpick > span { font-family: Cinzel, serif; color: #e8cf8f; margin-right: 4px; }
+.diffpick button:not(.btn) { padding: 6px 12px; border-radius: 999px; border: 1px solid #6b5230; background: rgba(0,0,0,.3); color: #e9dcc0; font: 600 13px Inter, sans-serif; cursor: pointer; }
+.diffpick button.on { background: linear-gradient(180deg, #d9a93f, #9c6f1c); color: #1c140d; border-color: #f0d27a; }
+.diffpick small { flex-basis: 100%; text-align: center; color: #bba98a; }
+.diffpick.in { display: inline; }
+.diffpick.in small { display: inline; }
+
+/* ---------- Rehber ---------- */
+#tut { position: fixed; z-index: 45; left: calc(10px + var(--safe-l, 0px)); bottom: calc(10px + var(--bot-h, 0px)); width: min(270px, calc(100vw - 20px)); padding: 10px 12px; border-radius: 12px;
+  background: linear-gradient(180deg, #2b2014, #1a120a); border: 2px solid #e0b955; box-shadow: 0 8px 24px rgba(0,0,0,.6), 0 0 18px rgba(224,185,85,.3); color: #f3e6c8; font-size: 13px; animation: cbin .4s cubic-bezier(.3,1.6,.6,1); }
+#tut.hidden { display: none; }
+#tut .tut-head { display: flex; align-items: center; gap: 8px; }
+#tut .tut-head b { font-family: Cinzel, serif; color: #ffe08a; font-size: 14px; }
+#tut .tut-n { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: #e0b955; color: #1c140d; font-weight: 700; }
+#tut p { margin: 6px 0 8px; line-height: 1.35; }
+#tut .tut-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#tut .tut-rw { color: #9fe39a; display: inline-flex; align-items: center; gap: 2px; }
+#tut .tut-rw .ico, #tut .tut-rw img { width: 14px; height: 14px; }
+#tut .tut-skip { margin-left: auto; background: none; border: 0; color: #a8977a; font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0; }
+#tut.mini { width: auto; max-width: 220px; padding: 6px 10px; cursor: pointer; }
+#tut.mini p, #tut.mini .tut-act { display: none; }
+.tut-hi { position: relative; z-index: 3; animation: tutpulse 1.1s ease-in-out infinite !important; outline: 3px solid #ffd54a !important; outline-offset: 2px; border-radius: 8px; }
+@keyframes tutpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,213,74,.85); } 50% { box-shadow: 0 0 0 9px rgba(255,213,74,0); } }

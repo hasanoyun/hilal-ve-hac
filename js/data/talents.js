@@ -10,7 +10,7 @@
 //   weaken {p, m}  p ihtimalle düşman bu savaşta can ×m ile girer
 //   rally {p, m}   p ihtimalle kayıpların ek m kadarı yaralı döner
 //   plunder {p, m} p ihtimalle ganimet ×m ve ek erzak
-//   Muharebe Sanatı (her turda zar atılır):
+//   İmza yetenekleri (yalnızca efsanevi komutanlarda, her turda zar atılır):
 //   pierce  {p, m} Delme: o tur düşman savunmasının m oranı yok sayılır
 //   confuse {p, m} Delirtme: düşman o tur saldırısının m oranını kendi saflarına yöneltir
 //   heal    {p, m} Can verme: o tur verilen kayıpların m oranı ayağa kalkar
@@ -22,7 +22,7 @@ export const MAX_RANK = 5;
 export const TIER_TALENT = { 1: 0.8, 2: 1.0, 3: 1.3 };
 export const tierK = (d) => TIER_TALENT[d?.tier || 1];
 export const SUB_REQ = [1, 3]; // 1. alt özellik ana özellik Kd. 1, 2. alt özellik Kd. 3 ister
-export const talentPoints = (lv) => Math.floor((lv - 1) * 0.9); // 50. seviyede 44 puan (toplam 75 kademe var: 3 dal + Muharebe Sanatı)
+export const talentPoints = (lv) => Math.floor((lv - 1) * 0.9); // 50. seviyede 44 puan (3 dal 45 kademe; efsanevilerde +5 imza)
 export const respecCost = (lv) => ({ gold: 150 * lv });
 
 const pct = (x) => `%${String(Math.round(x * 1000) / 10).replace('.', ',')}`; // Türkçe ondalık: %2,6
@@ -128,20 +128,19 @@ export const BRANCHES = {
   },
 };
 
-// Her komutanın ortak dalı: Muharebe Sanatı. Saygıdan bağımsız açıktır; bir ana ve beş alt özellik.
-// Alt özelliklerin kendi ana özellik kademesi şartı vardır (req).
-export const COMMON_BRANCH = 'muharebe';
-BRANCHES.muharebe = {
-  name: 'Muharebe Sanatı', icon: '🗡️', common: true,
-  main: { name: 'Vurma', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.024 * r * k)} ihtimalle verilen hasar ×1,5`, eff: (r, k = 1) => ({ proc: { type: 'crit', p: 0.024 * r * k, m: 1.5 } }) },
-  subs: [
-    { name: 'Kaçınma', chance: true, req: 1, desc: (r, k = 1) => `Her turda ${pct(0.024 * r * k)} ihtimalle alınan hasar −%40`, eff: (r, k = 1) => ({ proc: { type: 'dodge', p: 0.024 * r * k, m: 0.6 } }) },
-    { name: 'Delme', chance: true, req: 1, desc: (r, k = 1) => `Her turda ${pct(0.04 * r * k)} ihtimalle düşman savunmasının yarısı yok sayılır`, eff: (r, k = 1) => ({ proc: { type: 'pierce', p: 0.04 * r * k, m: 0.5 } }) },
-    { name: 'Can Verme', chance: true, req: 2, desc: (r, k = 1) => `Her turda ${pct(0.04 * r * k)} ihtimalle o turun kayıplarının %25'i ayağa kalkar`, eff: (r, k = 1) => ({ proc: { type: 'heal', p: 0.04 * r * k, m: 0.25 } }) },
-    { name: 'Sarsma', chance: true, req: 2, desc: (r, k = 1) => `Her turda ${pct(0.03 * r * k)} ihtimalle düşman sersemler: sonraki tur hasarı −%50`, eff: (r, k = 1) => ({ proc: { type: 'shake', p: 0.03 * r * k, m: 0.5 } }) },
-    { name: 'Delirtme', chance: true, req: 3, desc: (r, k = 1) => `Her turda ${pct(0.02 * r * k)} ihtimalle düşman şaşırır: saldırısının %35'i kendi saflarına döner`, eff: (r, k = 1) => ({ proc: { type: 'confuse', p: 0.02 * r * k, m: 0.35 } }) },
-  ],
+// Efsanevi (III. kademe) komutanların imza yetenekleri: her biri tarihî kişiliğine uygun, yalnızca ona özgü
+// bir savaş yeteneği. Saygı gerektirmez; tek düğüm, 5 kademe. (Tur tur zar atılır.)
+export const SIGNATURE = {
+  richard:     { key: 'imza_richard', icon: '🦁', name: 'Aslan Yürekli Darbe', type: 'Vurma', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.04 * r * k)} ihtimalle verilen hasar ×1,6 (Arsuf'ta en önde savaşan kral)`, eff: (r, k = 1) => ({ proc: { type: 'crit', p: 0.04 * r * k, m: 1.6 } }) },
+  sable:       { key: 'imza_sable', icon: '🛡️', name: 'Tapınak Kalkanı', type: 'Kaçınma', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.04 * r * k)} ihtimalle alınan hasar −%45 (tarikatın sıkı kalkan düzeni)`, eff: (r, k = 1) => ({ proc: { type: 'dodge', p: 0.04 * r * k, m: 0.55 } }) },
+  barbarossa:  { key: 'imza_barbarossa', icon: '🗡️', name: 'Kayser Mızrağı', type: 'Delme', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.06 * r * k)} ihtimalle düşman savunmasının yarısı yok sayılır (ağır şövalye hücumu)`, eff: (r, k = 1) => ({ proc: { type: 'pierce', p: 0.06 * r * k, m: 0.5 } }) },
+  kilicarslan: { key: 'imza_kilicarslan', icon: '🌀', name: 'Miryokefalon Pususu', type: 'Delirtme', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.03 * r * k)} ihtimalle düşman şaşırır, saldırısının %35'i kendi saflarına döner (geçitte dağılan Bizans ordusu)`, eff: (r, k = 1) => ({ proc: { type: 'confuse', p: 0.03 * r * k, m: 0.35 } }) },
+  nureddin:    { key: 'imza_nureddin', icon: '💚', name: 'Nureddin Darüşşifası', type: 'Can Verme', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.06 * r * k)} ihtimalle o turun kayıplarının %25'i ayağa kalkar (Şam'daki ünlü hastane)`, eff: (r, k = 1) => ({ proc: { type: 'heal', p: 0.06 * r * k, m: 0.25 } }) },
+  selahaddin:  { key: 'imza_selahaddin', icon: '💫', name: 'Hattin Susuzluğu', type: 'Sarsma', chance: true, desc: (r, k = 1) => `Her turda ${pct(0.05 * r * k)} ihtimalle düşman sarsılır, sonraki tur hasarı −%50 (susuz kalan Haçlı ordusu)`, eff: (r, k = 1) => ({ proc: { type: 'shake', p: 0.05 * r * k, m: 0.5 } }) },
 };
+// İmza yetenekleri ağaçta tek düğümlü bir dal olarak görünür
+for (const [id, S] of Object.entries(SIGNATURE)) BRANCHES[S.key] = { name: `İmza Yeteneği · ${S.type}`, icon: S.icon, signature: true, main: S, subs: [] };
+export const signatureBranch = (cmdId) => SIGNATURE[cmdId]?.key || null;
 // Alt özelliğin istediği ana özellik kademesi
 export const subReq = (B, slot) => B.subs[slot]?.req ?? SUB_REQ[slot];
 
@@ -193,10 +192,9 @@ export function talentNodes(cmdId) {
     list.push({ key: `${b}.main`, branch: b, bi, slot: 'main', node: B.main });
     B.subs.forEach((n, k) => list.push({ key: `${b}.${k}`, branch: b, bi, slot: k, node: n }));
   });
-  // Ortak dal (bi = -1: saygı istemez)
-  const C = BRANCHES[COMMON_BRANCH];
-  list.push({ key: `${COMMON_BRANCH}.main`, branch: COMMON_BRANCH, bi: -1, slot: 'main', node: C.main });
-  C.subs.forEach((n, k) => list.push({ key: `${COMMON_BRANCH}.${k}`, branch: COMMON_BRANCH, bi: -1, slot: k, node: n }));
+  // Efsanevi komutanın imza yeteneği (bi = -1: saygı istemez)
+  const sb = signatureBranch(cmdId);
+  if (sb) list.push({ key: `${sb}.main`, branch: sb, bi: -1, slot: 'main', node: BRANCHES[sb].main });
   return list;
 }
 
@@ -206,11 +204,10 @@ export function autoTalents(cmdId, lv) {
   const branches = COMMANDER_BRANCHES[cmdId] || COMMANDER_BRANCHES.starter;
   const tal = {};
   const order = [];
-  const M = COMMON_BRANCH;
-  for (let r = 0; r < 3; r++) { for (const b of branches) order.push(`${b}.main`); order.push(`${M}.main`); }
-  for (let r = 0; r < MAX_RANK; r++) { for (const b of branches) order.push(`${b}.0`, `${b}.1`); order.push(`${M}.${r % 5}`); }
-  for (let r = 3; r < MAX_RANK; r++) { for (const b of branches) order.push(`${b}.main`); order.push(`${M}.main`); }
-  for (let r = 0; r < MAX_RANK; r++) for (let s = 0; s < 5; s++) order.push(`${M}.${s}`);
+  const sb = signatureBranch(cmdId);
+  for (let r = 0; r < 3; r++) { for (const b of branches) order.push(`${b}.main`); if (sb) order.push(`${sb}.main`); }
+  for (let r = 0; r < MAX_RANK; r++) for (const b of branches) order.push(`${b}.0`, `${b}.1`);
+  for (let r = 3; r < MAX_RANK; r++) { for (const b of branches) order.push(`${b}.main`); if (sb) order.push(`${sb}.main`); }
   for (const k of order) {
     if (pts <= 0) break;
     if ((tal[k] || 0) >= MAX_RANK) continue;

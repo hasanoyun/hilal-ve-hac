@@ -77,10 +77,6 @@ export const CommanderMixin = {
     const lv = a.lv ?? this.cmdLevel(a.cmd);
     const m = coreMult(d, lv);
     e.atk.all = m.atk; e.def.all = m.def; e.hp.all = m.lead; e.march = m.spd;
-    // İkinci etkiler: Saldırı → vurma şansı, Savunma → kaçınma şansı
-    const cs = coreStats(d, lv);
-    e.procs.push({ type: 'crit', p: cs.atk * CORE2.crit.per, m: CORE2.crit.m, name: 'Vurma (Saldırı)' });
-    e.procs.push({ type: 'dodge', p: cs.def * CORE2.dodge.per, m: CORE2.dodge.m, name: 'Kaçınma (Savunma)' });
     for (const sk of d.skills) mergeEff(e, sk.eff, sk.name);
     // Yetenek ağacı: oyuncunun seçtikleri ya da yapay zekânın otomatik dağıttıkları
     const tal = a.fid ? autoTalents(a.cmd, lv) : this.cmdTalents(a.cmd);
@@ -102,8 +98,7 @@ export const CommanderMixin = {
     const d = this.cmdDef(a.cmd), lv = a.lv ?? this.cmdLevel(a.cmd), k = tierK(d);
     const m = coreMult(d, lv);
     const pc = (x) => `${x >= 1 ? '+' : '−'}%${String(Math.round(Math.abs(x - 1) * 1000) / 10).replace('.', ',')}`;
-    const cs = coreStats(d, lv), pp = (x) => `%${(x * 100).toFixed(1).replace('.', ',')}`;
-    const items = [{ kind: 'core', name: 'Temel özellikler', text: `Saldırı ${pc(m.atk)}, Savunma ${pc(m.def)}, Can ${pc(m.lead)} · her turda ${pp(cs.atk * CORE2.crit.per)} vurma, ${pp(cs.def * CORE2.dodge.per)} kaçınma şansı` }];
+    const items = [{ kind: 'core', name: 'Temel özellikler', text: `Saldırı ${pc(m.atk)}, Savunma ${pc(m.def)}, Can ${pc(m.lead)}` }];
     for (const sk of d.skills) items.push({ kind: 'skill', name: sk.name, text: sk.desc });
     const tal = a.fid ? autoTalents(a.cmd, lv) : this.cmdTalents(a.cmd);
     const open = a.fid ? MAX_RESPECT : this.cmdRespect(a.cmd);
@@ -174,7 +169,8 @@ export const CommanderMixin = {
 
   // ---------- Yetenek ağacı ----------
   cmdTalents(id) { return this.s.cmd.lv[id]?.tal || {}; },
-  talentSpent(id) { return Object.values(this.cmdTalents(id)).reduce((a, b) => a + b, 0); },
+  // Yalnızca ağaçta var olan düğümler sayılır (kaldırılan düğümlerin puanları kendiliğinden iade edilir)
+  talentSpent(id) { const tal = this.cmdTalents(id); return talentNodes(id).reduce((a, t) => a + (tal[t.key] || 0), 0); },
   talentFree(id) { return talentPoints(this.cmdLevel(id)) - this.talentSpent(id); },
   unspentTalents() { return this.s.cmd.owned.reduce((n, id) => n + Math.max(0, this.talentFree(id)), 0); },
   talentCheck(id, key) {

@@ -18,6 +18,8 @@ import { QuestMixin } from './quests.js';
 import { SeasonMixin } from './season.js';
 import { HospitalMixin } from './hospital.js';
 import { MetaMixin } from './meta.js';
+import { AiStrategyMixin } from './aistrategy.js';
+import { DIFFS, diffOf } from '../data/difficulty.js';
 
 const BASE_TPS = 0.8; // hız 1 ve maliyet 1'de saniyede kaç altıgen (yoğun ızgarada coğrafi hız aynı kalsın)
 const TRAIN_QUEUE = 3; // her kışlada sırada bekleyebilecek eğitim
@@ -61,7 +63,8 @@ function mkArmy(id, name, units) {
   return { id, name, units: { ...emptyUnits(), ...units }, state: 'home', target: null, path: null, cum: null, el: 0, wounded: emptyUnits(), pending: emptyUnits() };
 }
 
-export function newState(world, fid) {
+export function newState(world, fid, diff = 'normal') {
+  const D = DIFFS[diff] || DIFFS.normal;
   const owner = new Array(world.tiles.length).fill(null);
   const ai = {};
   for (const f of FACTION_IDS) {
@@ -70,14 +73,14 @@ export function newState(world, fid) {
     for (const j of world.tiles[ci].nb) {
       if (j >= 0 && world.tiles[j].terrain !== 'su' && !owner[j] && !world.tiles[j].city) owner[j] = f;
     }
-    if (f !== fid) ai[f] = { power: 250, palace: 1, palaceT: 0, next: 3 + Math.random() * 4, hostileCD: 0, alive: true };
+    if (f !== fid) ai[f] = { power: Math.round(250 * D.cap), palace: 1, palaceT: 0, next: 3 + Math.random() * 4, hostileCD: 0, alive: true };
   }
   const bld = {};
   for (const b of BUILDING_ORDER) bld[b] = 0;
   Object.assign(bld, START_BUILDINGS);
   const state = {
-    v: 1, wv: WORLD_V, faction: fid, t: 0, speed: 1,
-    res: { food: 2500, wood: 2500, stone: 2000, iron: 1500, gold: 600 },
+    v: 1, wv: WORLD_V, faction: fid, t: 0, speed: 1, diff, tut: { k: 0 },
+    res: Object.fromEntries(Object.entries({ food: 2500, wood: 2500, stone: 2000, iron: 1500, gold: 600 }).map(([k, v]) => [k, Math.round(v * D.res)])),
     bld, builds: [], tq: [],
     armies: [
       mkArmy(0, 'I. Ordu', { piyade: 150, okcu: 100, suvari: 60 }),
@@ -95,6 +98,9 @@ export const saveGame = (s) => { try { localStorage.setItem(SAVE_KEY, JSON.strin
 export const loadGame = () => { try { const r = localStorage.getItem(SAVE_KEY); return r ? JSON.parse(r) : null; } catch { return null; } };
 export const clearSave = () => { try { localStorage.removeItem(SAVE_KEY); } catch { /* depolama yok */ } };
 
+// Altıgenler arası yol süresi çarpanı (ordu, sefer ve kafilelerin hepsi için)
+const HEX_TRAVEL = 2;
+
 export class Game {
   constructor(world, state) {
     this.w = world;
@@ -107,6 +113,8 @@ export class Game {
     this.migrateCommanders();
     this.s.raids ||= [];
     this.s.convoys ||= [];
+    this.s.diff ||= 'normal';
+    this.s.tut ||= { k: 99, done: true }; // eski kayıtlar rehberi görmez
     this.s.abandon ||= {};
     // İki inşaat yuvası ve depo (eski kayıtlar)
     if (!this.s.builds) { this.s.builds = this.s.bq ? [this.s.bq] : []; delete this.s.bq; }
@@ -178,6 +186,7 @@ export class Game {
   setOwner(i, f) {
     const old = this.s.owner[i];
     this.s.owner[i] = f;
+    if (old && old !== this.pf && this.s.ai?.[old]) this.aiRecordLoss(i, old, f);
     delete this.s.gar[i];
     if (f && this.s.bandits) delete this.s.bandits[i];
     this.recount();
@@ -382,7 +391,7 @@ export class Game {
     return path.reverse();
   }
   routeTimes(a, path, mult, fid = this.pf) {
-    const sp = this.armySpeed(a, fid) * mult * BASE_TPS;
+    const sp = (this.armySpeed(a, fid) * mult * BASE_TPS) / HEX_TRAVEL;
     const cum = [0];
     for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + this.moveCost(path[k], fid) / sp);
     return cum;
@@ -714,6 +723,8 @@ export class Game {
   }
 
   // ---------- Yapay zekâ ----------
+  diff() { return diffOf(this.s); }
+  aiPowerCap(a) { return (300 + a.palace * 300) * this.diff().cap; }
   aiPalaceTime(p) { return 130 * Math.pow(1.55, p - 1); }
 
   aiTick(dt) {
@@ -721,17 +732,19 @@ export class Game {
       if (!a.alive) continue;
       const cnt = this.count[fid];
       // İnsan hızı: güç, toprakla doğrusal değil yavaşça büyür
-      a.power += dt * (2 + Math.sqrt(cnt.tiles) * 0.9 + a.palace * 0.5);
+      const D = this.diff();
+      a.power += dt * (2 + Math.sqrt(cnt.tiles) * 0.9 + a.palace * 0.5) * D.grow;
       // Ordu büyüklüğü sınırı: oyuncunun Kışla kapasitesi gibi, saray seviyesiyle büyür
-      a.power = Math.min(a.power, 300 + a.palace * 300);
+      a.power = Math.min(a.power, this.aiPowerCap(a));
       // Saray, oyuncunun Saray'ı gibi giderek uzayan sürelerle yükselir (≈2, 5, 11, 19, 31, 51 dk)
       a.palaceT += dt;
       if (a.palace < 10 && a.palaceT >= this.aiPalaceTime(a.palace)) { a.palace++; a.palaceT = 0; }
       a.hostileCD -= dt;
       a.next -= dt;
       // Bir insanın orduları yönetme hızında yeni hedef seçer
-      if (a.next <= 0) { a.next = 7 + Math.random() * 6; this.aiExpand(fid, a); }
+      if (a.next <= 0) { a.next = (7 + Math.random() * 6) * D.think; this.aiExpand(fid, a); }
     }
+    this.aiStrategyTick(dt); // savunma ve tahkim
   }
 
   aiExpand(fid, a) {
@@ -757,9 +770,10 @@ export class Game {
     let best = -1, bs = -Infinity, bdef = 0;
     for (const j of cands) {
       const o = owner[j];
+      const retake = o && this.aiWasLost(fid, j); // kaybettiği toprak: daha kararlı
       if (o === this.pf) {
         if (this.shieldLeft() > 0) continue; // Barış Bayrağı
-        if (!this.atWar(fid, o) || a.hostileCD > 0 || Math.random() > 0.4) continue;
+        if (!this.atWar(fid, o) || (!retake && (a.hostileCD > 0 || Math.random() > this.diff().hostile))) continue;
         if (this.s.raids.some((r) => r.state === 'out' && isRaid(r) && (r.fid === fid || r.target === j))) continue;
       }
       else if (o && !this.atWar(fid, o)) continue;
@@ -772,6 +786,7 @@ export class Game {
       let sc = val - def / 60 + Math.random() * 3;
       if (o && o !== this.pf) sc += 3; // savaştaki düşmanın toprağı
       if (o && this.status(fid) === 'ally' && this.atWar(this.pf, o)) sc += 4; // müttefik, ortak düşmana odaklanır
+      sc += this.aiStrategicBonus(fid, j, o); // geri alma, şehir koruma, önünü kesme
       if (sc > bs) { bs = sc; best = j; bdef = def; }
     }
     if (best < 0) return;
@@ -895,4 +910,4 @@ export class Game {
   }
 }
 
-Object.assign(Game.prototype, DiplomacyMixin, CommanderMixin, RaidMixin, FieldMixin, BanditMixin, QuestMixin, SeasonMixin, HospitalMixin, MetaMixin);
+Object.assign(Game.prototype, DiplomacyMixin, CommanderMixin, RaidMixin, FieldMixin, BanditMixin, QuestMixin, SeasonMixin, HospitalMixin, MetaMixin, AiStrategyMixin);

@@ -17,6 +17,8 @@ const CHEST_SEAM = { tahta: 42, gumus: 44, altin: 44, efsanevi: 45 };
 import { Minimap } from './minimap.js';
 import { sfx, unlockAudio, isMuted, setMuted } from './sfx.js';
 import { HudMeta, META_ACTS } from './hudmeta.js';
+import { HudTutorial } from './tutorial.js';
+import { DIFFS, DIFF_ORDER } from '../data/difficulty.js';
 
 // Büyük sandık çizimi (kapak ayrı grup: açılırken döner)
 const chestSvg = (c) => `<svg viewBox="0 0 120 100" class="cf-svg"><defs><linearGradient id="cfw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a5a2e"/><stop offset="1" stop-color="#4a2c14"/></linearGradient></defs>
@@ -36,7 +38,7 @@ const TAB_GROUPS = {
   krallik: [['diplomacy', 'Diplomasi', 'scroll'], ['ranking', 'Sıralama', 'crown']],
 };
 const GROUP_OF = { city: 'sehir', armies: 'sehir', hospital: 'sehir', diplomacy: 'krallik', ranking: 'krallik' };
-import { BRANCHES, COMMANDER_BRANCHES, COMMON_BRANCH, subReq, BIOS, MAX_RANK, talentNodes, talentPoints, respecCost, tierK } from '../data/talents.js';
+import { BRANCHES, COMMANDER_BRANCHES, SIGNATURE, signatureBranch, subReq, BIOS, MAX_RANK, talentNodes, talentPoints, respecCost, tierK } from '../data/talents.js';
 
 const $ = (s) => document.querySelector(s);
 const fmt = (n) => {
@@ -164,6 +166,7 @@ export class HUD {
     this.timer = setInterval(() => this.refresh(), 250);
     this.minimap = new Minimap(game, scene, game.w);
     this.initMeta();
+    this.initTutorial();
     this.refresh();
   }
 
@@ -335,6 +338,8 @@ export class HUD {
       const id = b.dataset.c, cost = respecCost(g.cmdLevel(id));
       if (!(await askConfirm(`${g.cmdDef(id).name}'nin tüm yetenek puanları geri alınsın mı? Bedeli 🪙${fmt(cost.gold)}.`, { ok: 'Sıfırla', danger: true }))) return;
       err = g.respecTalents(id);
+    } else if (act === 'diff') {
+      if (DIFFS[b.dataset.d]) { g.s.diff = b.dataset.d; this.toast(`Zorluk: ${DIFFS[b.dataset.d].icon} ${DIFFS[b.dataset.d].name}`, 'info'); }
     } else if (act === 'abandon') {
       err = g.abandon(this.sel);
     } else if (act === 'unabandon') {
@@ -392,6 +397,7 @@ export class HUD {
     this.refreshTop();
     this.refreshTile();
     this.refreshModal();
+    this.tutTick();
   }
 
   refreshTop() {
@@ -896,9 +902,8 @@ export class HUD {
   core2Text(k, v) {
     const p = (x) => `%${(x * 100).toFixed(1).replace('.', ',')}`;
     const main = `+${p(v * CORE[k].per)} ${{ atk: 'saldırı', def: 'savunma', lead: 'can', spd: 'hız' }[k]}`;
-    const second = k === 'atk' ? `${p(v * CORE2.crit.per)} vurma` : k === 'def' ? `${p(v * CORE2.dodge.per)} kaçınma`
-      : k === 'lead' ? `+${v * CORE2.cap} asker` : `hak ${p(v * CORE2.ap)} hızlı`;
-    return `${main} · ${second}`;
+    const second = k === 'lead' ? `+${v * CORE2.cap} asker` : k === 'spd' ? `hak ${p(v * CORE2.ap)} hızlı` : '';
+    return second ? `${main} · ${second}` : main;
   }
   // Saygınlık satırı: eşya, saygı seviyesi ve bir sonraki eşiğe ilerleme
   respectLine(id) {
@@ -917,7 +922,7 @@ export class HUD {
       <div class="chead">${this.cmdPortrait(id)}<div><b>${esc(d.name)}</b><small>${esc(d.title)} · <span class="tier">Kademe ${T.roman} · ${T.name}</span></small></div></div>
       ${this.respectLine(id)}${this.g.s.cmd.owned.includes(id) ? `<div class="apline"><span class="apchip ${this.g.apOf(id) < 1 ? 'empty' : ''}">🏃 ${this.g.apOf(id)}/${AP_MAX} hareket</span></div>` : ''}
       ${this.coreHtml(id, d, owned ? this.g.cmdLevel(id) : 1, owned)}
-      <ul class="skills">${d.skills.map((k) => `<li><b>${esc(k.name)}</b> — ${esc(k.desc)}</li>`).join('')}</ul>
+      <ul class="skills">${d.skills.map((k) => `<li><b>${esc(k.name)}</b> — ${esc(k.desc)}</li>`).join('')}${SIGNATURE[id] ? `<li class="sig">${SIGNATURE[id].icon} <b>İmza · ${esc(SIGNATURE[id].name)}</b> — ${esc(SIGNATURE[id].type)} (yetenek ağacında)</li>` : ''}</ul>
       ${extra}
     </div>`;
   }
@@ -1285,10 +1290,10 @@ export class HUD {
       <div class="tpoints"><span>${owned ? `⭐ Kullanılabilir puan: <b>${free}</b> · Harcanan ${total - free}/${total}` : '🔒 Komutanı açınca yetenek seçebilirsin'}</span>
       <span class="tierk" style="--tc:${T.color}">Kademe ${T.roman} · yetenek gücü ×${String(k).replace('.', ',')}${d.tier < 3 ? ' (Efsanevi komutanlarda ×1,3)' : ''}</span>
       <span class="muted">Her seviyede ~0,9 puan (50. seviyede 44). 🎲 işaretli yetenekler ihtimal bazlıdır.</span></div><div class="tree">`;
-    [...(COMMANDER_BRANCHES[id] || COMMANDER_BRANCHES.starter), COMMON_BRANCH].forEach((b, bi) => {
+    [...(COMMANDER_BRANCHES[id] || COMMANDER_BRANCHES.starter), signatureBranch(id)].filter(Boolean).forEach((b, bi) => {
       const B = BRANCHES[b];
-      const bLocked = !B.common && bi >= resp;
-      html += `<div class="branch ${bLocked ? 'rlocked' : ''} ${B.common ? 'common' : ''}"><div class="bhead">${B.icon} ${esc(B.name)}${B.common ? ' <small>· tüm komutanlarda, saygı gerekmez</small>' : ''}</div>${bLocked ? `<div class="rlock">🔒 ${RESPECT_NAMES[bi + 1]} gerekli (${(bi + 1) * ITEMS_PER_RESPECT} ${esc(it.name)})</div>` : ''}`;
+      const bLocked = !B.signature && bi >= resp;
+      html += `<div class="branch ${bLocked ? 'rlocked' : ''} ${B.signature ? 'common' : ''}"><div class="bhead">${B.icon} ${esc(B.name)}${B.signature ? ' <small>· yalnızca bu efsanevi komutanda, saygı gerekmez</small>' : ''}</div>${bLocked ? `<div class="rlock">🔒 ${RESPECT_NAMES[bi + 1]} gerekli (${(bi + 1) * ITEMS_PER_RESPECT} ${esc(it.name)})</div>` : ''}`;
       for (const t of talentNodes(id).filter((x) => x.branch === b)) {
         const r = tal[t.key] || 0, n = t.node;
         const e = owned ? g.talentCheck(id, t.key) : 'Komutan kilitli';
@@ -1521,8 +1526,9 @@ export class HUD {
       <div class="row"><span class="lbl">Özellik</span><span>${esc(f.trait.text)}</span></div>
       <div class="row"><span class="lbl">Özel birlik</span><span>${ico(uq.type)} <b>${esc(uq.name)}</b> (${UNITS[uq.type].name} yerine)</span></div>
       <div class="row"><span class="lbl">Seçkin birlik</span><span>${eliteIco(f.color)} <b>${esc(f.elite.name)}</b> — ${esc(f.elite.desc)}<br><small class="muted">Saldırı ${f.elite.atk} · Savunma ${f.elite.def} · Can ${f.elite.hp} · Hız ×${String(f.elite.speed).replace('.', ',')} · ${esc(BUILDINGS.ocak.name)}'ta eğitilir</small></span></div>
+      <div class="row"><span class="lbl">Zorluk</span><span class="diffpick in">${DIFF_ORDER.map((k) => `<button class="btn tiny ${k === (this.g.s.diff || 'normal') ? 'primary' : ''}" data-act="diff" data-d="${k}">${DIFFS[k].icon} ${DIFFS[k].name}</button>`).join('')}<br><small class="muted">${esc(DIFFS[this.g.s.diff || 'normal'].text)} Oyun sırasında değiştirilebilir.</small></span></div>
       <div class="actions"><button class="btn danger" data-act="restart">Yeni oyun başlat</button></div>`;
-    return { title: 'Devletin', sig: 'f', html };
+    return { title: 'Devletin', sig: 'f' + this.g.s.diff, html };
   }
 
   view_victory() {
@@ -1530,4 +1536,4 @@ export class HUD {
   }
 }
 
-Object.assign(HUD.prototype, HudMeta);
+Object.assign(HUD.prototype, HudMeta, HudTutorial);

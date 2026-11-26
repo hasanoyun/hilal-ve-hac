@@ -27,7 +27,7 @@ export const hasArt = (key) => !!MAN[key];
 // Harita görselleri (arazi dokuları, kaleler, kaynak simgeleri) Canvas'a çizileceği için önceden yüklenir.
 const IMG = {};
 export async function loadMapArt() {
-  const keys = Object.keys(MAN).filter((k) => typeof MAN[k] === 'string' && /^(terrain|map|ui)\//.test(k));
+  const keys = Object.keys(MAN).filter((k) => typeof MAN[k] === 'string' && /^(terrain|map|ui|march)\//.test(k));
   await Promise.all(keys.map((k) => new Promise((res) => {
     const im = new Image();
     im.onload = () => { IMG[k] = im; res(); };
